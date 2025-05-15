@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/backend",
+    "crates/data_fetcher",
+    "crates/market",
+    "crates/universe",
+]
+
+[workspace.package]
+publish = false
+edition = "2024"
+
+[workspace.dependencies]
+
+# Workspace Members
+backend = { path = "crates/backend" }
+data_fetcher = { path = "crates/data_fetcher" }
+universe = { path = "crates/universe" }
+
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
