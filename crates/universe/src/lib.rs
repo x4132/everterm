@@ -1,33 +1,90 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::error::Error;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{Mutex, OnceCell};
 
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, PartialEq, Debug)]
+mod macros;
+
+/// This struct represents a geospatial point in the EvE universe.
+#[derive(Clone, Debug, Copy, Deserialize, PartialEq)]
 pub struct Point {
     x: f64,
     y: f64,
     z: f64,
 }
+impl Point {
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
+        Point { x, y, z }
+    }
+}
 
+static REGIONS: OnceCell<Arc<Mutex<Regions>>> = OnceCell::const_new();
+
+async fn regions_cache_init() -> Arc<Mutex<Regions>> {
+    Arc::new(Mutex::new(Regions::new()))
+}
+
+/// This struct represents a region in the EvE universe.
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Region {
     pub id: u32,
     pub name: String,
 }
 
+impl Region {
+    fn from(api_request: RegionAPIRequest) -> Self {
+        Region {
+            id: api_request.region_id,
+            name: api_request.name,
+        }
+    }
+
+    pub async fn get_region(id: u32) -> RegionResult {
+        let cache = REGIONS.get_or_init(regions_cache_init).await;
+
+        {
+            let cache = cache.lock().await;
+            if let Some(data) = cache.0.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        Region::fetch_region(id).await
+    }
+
+    async fn fetch_region(id: u32) -> RegionResult {
+        let region = reqwest::get(esi!("/universe/regions/{}", id))
+            .await?
+            .json::<RegionAPIRequest>()
+            .await?;
+
+        let region = Region::from(region);
+
+        let mut cache = REGIONS.get_or_init(regions_cache_init).await.lock().await;
+        cache.0.insert(region.id, region.clone());
+
+        Ok(region)
+    }
+}
+
+type RegionResult = Result<Region, Box<dyn Error>>;
+
 #[derive(Deserialize)]
-struct RegionRequest {
+struct RegionAPIRequest {
     region_id: u32,
     name: String,
 }
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Regions(pub HashMap<u32, Region>);
+
 impl Regions {
-    pub async fn fetch() -> Result<Regions, Box<dyn std::error::Error>> {
+    pub fn new() -> Self {
+        Regions(HashMap::new())
+    }
+
+    pub async fn fetch_all() -> Result<Regions, Box<dyn std::error::Error>> {
         let ids = reqwest::get("https://esi.evetech.net/latest/universe/regions/")
             .await?
             .json::<Vec<u32>>()
@@ -38,17 +95,16 @@ impl Regions {
         for id in ids {
             let regions_map = regions_map.clone();
             let handle = tokio::spawn(async move {
-                // Consider better error handling than unwrap() in production code
                 let info = reqwest::get(format!(
                     "https://esi.evetech.net/latest/universe/regions/{id}"
                 ))
                 .await
                 .expect("Failed to fetch region info") // More specific error message
-                .json::<RegionRequest>()
+                .json::<RegionAPIRequest>()
                 .await
                 .expect("Failed to deserialize region info"); // More specific error message
 
-                let mut regions_map = regions_map.lock().expect("Failed to lock regions map");
+                let mut regions_map = regions_map.lock().await;
                 regions_map.insert(
                     info.region_id,
                     Region {
@@ -61,15 +117,13 @@ impl Regions {
             handles.push(handle);
         }
 
-        // Use futures::future::try_join_all to handle errors from spawned tasks
         futures::future::try_join_all(handles)
             .await
             .expect("Error in one of the spawned tasks");
 
         let final_map = Arc::try_unwrap(regions_map)
             .expect("Arc still has multiple strong counts")
-            .into_inner()
-            .expect("Mutex poisoned");
+            .into_inner();
 
         Ok(Regions(final_map))
     }
@@ -98,7 +152,7 @@ pub struct SystemApiResponse {
 pub struct Systems(pub HashMap<u32, System>);
 
 impl Systems {
-    pub async fn fetch() -> Result<Systems, Box<dyn std::error::Error>> {
+    pub async fn fetch_all() -> Result<Systems, Box<dyn std::error::Error>> {
         let ids = reqwest::get("https://esi.evetech.net/latest/universe/systems/")
             .await?
             .json::<Vec<u32>>()
@@ -121,7 +175,7 @@ impl Systems {
 
                 println!("Reqwested {id}");
 
-                let mut systems_map = systems_map.lock().expect("Failed to lock systems map");
+                let mut systems_map = systems_map.lock().await;
 
                 // Map SystemApiResponse fields to System fields
                 systems_map.insert(
@@ -146,8 +200,7 @@ impl Systems {
 
         let final_map = Arc::try_unwrap(systems_map)
             .expect("Arc still has multiple strong counts")
-            .into_inner()
-            .expect("Mutex poisoned");
+            .into_inner();
 
         Ok(Systems(final_map))
     }

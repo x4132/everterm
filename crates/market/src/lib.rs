@@ -4,14 +4,14 @@ pub struct MarketOrder {
     duration: u32,
     is_buy_order: bool,
     issued: DateTime<Utc>,
-    location: u32,
+    // location: ,
 }
 
-mod tests {
-    use super::*;
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn fetch_market_orders() {
+//     #[test]
+//     fn fetch_market_orders() {
 
-   }
-}
+//    }
+// }
