@@ -39,13 +39,6 @@ pub struct Region {
 }
 
 impl Region {
-    fn from(api_request: RegionAPIRequest) -> Self {
-        Region {
-            id: api_request.region_id,
-            name: api_request.name,
-        }
-    }
-
     pub async fn get_region(id: u32) -> RegionResult {
         let cache = REGIONS.get_or_init(regions_cache_init).await;
 
@@ -71,6 +64,15 @@ impl Region {
         cache.0.insert(region.id, region.clone());
 
         Ok(region)
+    }
+}
+
+impl From<RegionAPIRequest> for Region {
+    fn from(api_request: RegionAPIRequest) -> Self {
+        Region {
+            id: api_request.region_id,
+            name: api_request.name,
+        }
     }
 }
 
