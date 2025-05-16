@@ -19,6 +19,12 @@ impl Point {
     }
 }
 
+/**
+========================================
+REGION API
+========================================
+*/
+
 static REGIONS: OnceCell<Arc<Mutex<Regions>>> = OnceCell::const_new();
 
 async fn regions_cache_init() -> Arc<Mutex<Regions>> {
@@ -85,7 +91,7 @@ impl Regions {
     }
 
     pub async fn fetch_all() -> Result<Regions, Box<dyn std::error::Error>> {
-        let ids = reqwest::get("https://esi.evetech.net/latest/universe/regions/")
+        let ids = reqwest::get(esi!("/universe/regions/"))
             .await?
             .json::<Vec<u32>>()
             .await?;
@@ -95,23 +101,10 @@ impl Regions {
         for id in ids {
             let regions_map = regions_map.clone();
             let handle = tokio::spawn(async move {
-                let info = reqwest::get(format!(
-                    "https://esi.evetech.net/latest/universe/regions/{id}"
-                ))
-                .await
-                .expect("Failed to fetch region info") // More specific error message
-                .json::<RegionAPIRequest>()
-                .await
-                .expect("Failed to deserialize region info"); // More specific error message
+                let info = Region::fetch_region(id).await.unwrap();
 
                 let mut regions_map = regions_map.lock().await;
-                regions_map.insert(
-                    info.region_id,
-                    Region {
-                        id: info.region_id,
-                        name: info.name,
-                    },
-                );
+                regions_map.insert(info.id, info);
             });
 
             handles.push(handle);
@@ -128,6 +121,12 @@ impl Regions {
         Ok(Regions(final_map))
     }
 }
+
+/**
+========================================
+SYSTEM API
+========================================
+*/
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct System {
