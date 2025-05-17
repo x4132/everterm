@@ -55,7 +55,7 @@ impl Region {
     async fn fetch_region(id: u32) -> RegionResult {
         let region = reqwest::get(esi!("/universe/regions/{}", id))
             .await?
-            .json::<RegionAPIRequest>()
+            .json::<RegionAPIResponse>()
             .await?;
 
         let region = Region::from(region);
@@ -67,11 +67,11 @@ impl Region {
     }
 }
 
-impl From<RegionAPIRequest> for Region {
-    fn from(api_request: RegionAPIRequest) -> Self {
+impl From<RegionAPIResponse> for Region {
+    fn from(api_response: RegionAPIResponse) -> Self {
         Region {
-            id: api_request.region_id,
-            name: api_request.name,
+            id: api_response.region_id,
+            name: api_response.name,
         }
     }
 }
@@ -79,7 +79,7 @@ impl From<RegionAPIRequest> for Region {
 type RegionResult = Result<Region, Box<dyn Error>>;
 
 #[derive(Deserialize)]
-struct RegionAPIRequest {
+struct RegionAPIResponse {
     region_id: u32,
     name: String,
 }
@@ -130,18 +130,62 @@ SYSTEM API
 ========================================
 */
 
-#[derive(Clone, Deserialize, PartialEq, Debug)]
-pub struct System {
-    id: u32,
-    constellation_id: u32,
-    position: Point,
-    security_status: f32,
-    name: String,
+static SYSTEMS: OnceCell<Arc<Mutex<Systems>>> = OnceCell::const_new();
+
+async fn systems_cache_init() -> Arc<Mutex<Systems>> {
+    Arc::new(Mutex::new(Systems::new()))
 }
 
-// This struct directly matches the API response for a single system
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct System {
+    pub id: u32,
+    pub constellation_id: u32,
+    pub position: Point,
+    pub security_status: f32,
+    pub name: String,
+}
+
+impl System {
+    pub async fn get_system(id: u32) -> SystemResult {
+        let cache = SYSTEMS.get_or_init(systems_cache_init).await;
+
+        {
+            let cache = cache.lock().await;
+            if let Some(data) = cache.0.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        System::fetch_system(id).await
+    }
+
+    async fn fetch_system(id: u32) -> SystemResult {
+        let system = reqwest::get(esi!("/universe/systems/{}", id)).await?.json::<SystemAPIResponse>().await?;
+
+        let system = System::from(system);
+
+        let mut cache = SYSTEMS.get_or_init(systems_cache_init).await.lock().await;
+        cache.0.insert(system.id, system.clone());
+
+
+        Ok(system)
+    }
+}
+
+impl From<SystemAPIResponse> for System {
+    fn from(api_response: SystemAPIResponse) -> Self {
+        System {
+            id: api_response.system_id,
+            constellation_id: api_response.constellation_id,
+            position: api_response.position,
+            security_status: api_response.security_status,
+            name: api_response.name,
+        }
+    }
+}
+
 #[derive(Deserialize)]
-pub struct SystemApiResponse {
+pub struct SystemAPIResponse {
     system_id: u32,
     constellation_id: u32,
     position: Point,
@@ -149,12 +193,18 @@ pub struct SystemApiResponse {
     name: String,
 }
 
+type SystemResult = Result<System, Box<dyn Error>>;
+
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Systems(pub HashMap<u32, System>);
 
 impl Systems {
+    pub fn new() -> Self {
+        Systems(HashMap::new())
+    }
+
     pub async fn fetch_all() -> Result<Systems, Box<dyn std::error::Error>> {
-        let ids = reqwest::get("https://esi.evetech.net/latest/universe/systems/")
+        let ids = reqwest::get(esi!("/universe/systems/"))
             .await?
             .json::<Vec<u32>>()
             .await?;
@@ -164,15 +214,7 @@ impl Systems {
         for id in ids {
             let systems_map = systems_map.clone();
             let handle = tokio::spawn(async move {
-                // Consider better error handling than unwrap() in production code
-                let info = reqwest::get(format!(
-                    "https://esi.evetech.net/latest/universe/systems/{id}" // Corrected endpoint
-                ))
-                .await
-                .expect("Failed to fetch system info") // More specific error message
-                .json::<SystemApiResponse>() // Deserialize into SystemApiResponse
-                .await
-                .expect("Failed to deserialize system info"); // More specific error message
+                let info = System::fetch_system(id).await.unwrap();
 
                 println!("Reqwested {id}");
 
@@ -180,14 +222,8 @@ impl Systems {
 
                 // Map SystemApiResponse fields to System fields
                 systems_map.insert(
-                    info.system_id,
-                    System {
-                        id: info.system_id,
-                        constellation_id: info.constellation_id,
-                        position: info.position,
-                        security_status: info.security_status,
-                        name: info.name,
-                    },
+                    info.id,
+                    info
                 );
             });
 

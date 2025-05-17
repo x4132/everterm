@@ -9,7 +9,7 @@ pub enum MarketOrderRange {
 
 pub struct MarketOrder {
     id: u64,
-    duration: u32,
+    // duration: u32, - this is not really relevant for any user, there is no reason to know when it expires over when it was issued
     is_buy_order: bool,
     issued: DateTime<Utc>,
     location: System,
