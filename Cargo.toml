@@ -5,6 +5,7 @@ members = [
     "crates/data_fetcher",
     "crates/market",
     "crates/universe",
+    "client/src-tauri"
 ]
 
 [workspace.package]
@@ -18,6 +19,7 @@ backend = { path = "crates/backend" }
 data_fetcher = { path = "crates/data_fetcher" }
 universe = { path = "crates/universe" }
 market = { path = "crates/market" }
+client_tauri = { path = "client/src-tauri" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
