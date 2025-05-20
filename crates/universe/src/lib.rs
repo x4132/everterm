@@ -55,10 +55,8 @@ impl Region {
     async fn fetch_region(id: u32) -> RegionResult {
         let region = reqwest::get(esi!("/universe/regions/{}", id))
             .await?
-            .json::<RegionAPIResponse>()
+            .json::<Region>()
             .await?;
-
-        let region = Region::from(region);
 
         let mut cache = REGIONS.get_or_init(regions_cache_init).await.lock().await;
         cache.0.insert(region.id, region.clone());
@@ -67,22 +65,7 @@ impl Region {
     }
 }
 
-impl From<RegionAPIResponse> for Region {
-    fn from(api_response: RegionAPIResponse) -> Self {
-        Region {
-            id: api_response.region_id,
-            name: api_response.name,
-        }
-    }
-}
-
 type RegionResult = Result<Region, Box<dyn Error>>;
-
-#[derive(Deserialize)]
-struct RegionAPIResponse {
-    region_id: u32,
-    name: String,
-}
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Regions(pub HashMap<u32, Region>);
@@ -138,7 +121,7 @@ async fn systems_cache_init() -> Arc<Mutex<Systems>> {
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct System {
-    pub id: u32,
+    pub system_id: u32,
     pub constellation_id: u32,
     pub position: Point,
     pub security_status: f32,
@@ -160,37 +143,16 @@ impl System {
     }
 
     async fn fetch_system(id: u32) -> SystemResult {
-        let system = reqwest::get(esi!("/universe/systems/{}", id)).await?.json::<SystemAPIResponse>().await?;
-
-        let system = System::from(system);
+        let system = reqwest::get(esi!("/universe/systems/{}", id))
+            .await?
+            .json::<System>()
+            .await?;
 
         let mut cache = SYSTEMS.get_or_init(systems_cache_init).await.lock().await;
-        cache.0.insert(system.id, system.clone());
-
+        cache.0.insert(system.system_id, system.clone());
 
         Ok(system)
     }
-}
-
-impl From<SystemAPIResponse> for System {
-    fn from(api_response: SystemAPIResponse) -> Self {
-        System {
-            id: api_response.system_id,
-            constellation_id: api_response.constellation_id,
-            position: api_response.position,
-            security_status: api_response.security_status,
-            name: api_response.name,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct SystemAPIResponse {
-    system_id: u32,
-    constellation_id: u32,
-    position: Point,
-    security_status: f32,
-    name: String,
 }
 
 type SystemResult = Result<System, Box<dyn Error>>;
@@ -216,15 +178,10 @@ impl Systems {
             let handle = tokio::spawn(async move {
                 let info = System::fetch_system(id).await.unwrap();
 
-                println!("Reqwested {id}");
-
                 let mut systems_map = systems_map.lock().await;
 
                 // Map SystemApiResponse fields to System fields
-                systems_map.insert(
-                    info.id,
-                    info
-                );
+                systems_map.insert(info.system_id, info);
             });
 
             handles.push(handle);
@@ -243,9 +200,61 @@ impl Systems {
     }
 }
 
+/**
+========================================
+STATION API
+========================================
+*/
+
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Station {
     id: u32,
     system: System,
     name: String,
+}
+
+/**
+========================================
+TYPES API
+========================================
+*/
+
+static TYPES: OnceCell<Arc<Mutex<HashMap<u32, Item>>>> = OnceCell::const_new();
+
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct Item {
+    type_id: u32,
+    group_id: u32,
+    icon_id: u32,
+    market_group_id: u32,
+    name: String,
+    description: String,
+}
+
+type TypeResult = Result<Item, Box<dyn Error>>;
+impl Item {
+    pub async fn get_type(id: u32) -> TypeResult {
+        let cache = TYPES.get_or_init(async || Arc::new(Mutex::new(HashMap::new()))).await;
+
+        {
+            let cache = cache.lock().await;
+            if let Some(data) = cache.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        Item::fetch_type(id).await
+    }
+
+    async fn fetch_type(id: u32) -> TypeResult {
+        let eve_type = reqwest::get(esi!("/universe/types/{}", id))
+            .await?
+            .json::<Item>()
+            .await?;
+
+        let mut cache = TYPES.get().unwrap().lock().await;
+        cache.insert(eve_type.type_id, eve_type.clone());
+
+        Ok(eve_type)
+    }
 }
