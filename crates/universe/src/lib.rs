@@ -206,11 +206,61 @@ STATION API
 ========================================
 */
 
+static STATIONS: OnceCell<Arc<Mutex<HashMap<u32, Station>>>> = OnceCell::const_new();
+
+type StationResult = Result<Station, Box<dyn Error>>;
+
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+struct StationApiResponse {
+    #[serde(rename = "station_id")]
+    id: u32,
+    #[serde(rename = "system_id")]
+    system_id: u32,
+    name: String,
+}
+
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Station {
-    id: u32,
-    system: System,
-    name: String,
+    pub id: u32,
+    pub system: System,
+    pub name: String,
+}
+
+impl Station {
+    pub async fn get_station(id: u32) -> StationResult {
+        let cache = STATIONS
+            .get_or_init(async || { Arc::new(Mutex::new(HashMap::new())) })
+            .await;
+
+        {
+            let cache = cache.lock().await;
+            if let Some(data) = cache.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        Station::fetch_station(id).await
+    }
+
+    async fn fetch_station(id: u32) -> StationResult {
+        let resp = reqwest::get(esi!("/universe/stations/{}", id))
+            .await?
+            .json::<StationApiResponse>()
+            .await?;
+
+        let system = System::get_system(resp.system_id).await?;
+
+        let station = Station {
+            id: resp.id,
+            system,
+            name: resp.name,
+        };
+
+        let mut cache = STATIONS.get().unwrap().lock().await;
+        cache.insert(station.id, station.clone());
+
+        Ok(station)
+    }
 }
 
 /**
@@ -234,7 +284,9 @@ pub struct Item {
 type TypeResult = Result<Item, Box<dyn Error>>;
 impl Item {
     pub async fn get_type(id: u32) -> TypeResult {
-        let cache = TYPES.get_or_init(async || Arc::new(Mutex::new(HashMap::new()))).await;
+        let cache = TYPES
+            .get_or_init(async || Arc::new(Mutex::new(HashMap::new())))
+            .await;
 
         {
             let cache = cache.lock().await;
