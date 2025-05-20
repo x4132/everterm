@@ -657,6 +657,7 @@ dependencies = [
 name = "data_fetcher"
 version = "0.1.0"
 dependencies = [
+ "market",
  "reqwest",
  "tokio",
  "universe",
@@ -1953,6 +1954,10 @@ name = "market"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures",
+ "reqwest",
+ "serde",
+ "tokio",
  "universe",
 ]
 

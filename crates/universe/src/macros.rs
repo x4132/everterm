@@ -11,14 +11,14 @@
 /// ```
 #[macro_export]
 macro_rules! esi {
-    // ——— With one or more formatting args (positional or named) ———
-    ($fmt:literal, $($args:tt)+ $(,)?) => {
+    // With one or more positional formatting args
+    ($fmt:literal, $($args:expr),+ $(,)?) => {
         format!(
             concat!("https://esi.evetech.net/latest", $fmt),
-            $($args)+
+            $($args),+
         )
     };
-    // ——— No formatting args ———
+    // No formatting args
     ($fmt:literal $(,)?) => {
         format!(concat!("https://esi.evetech.net/latest", $fmt))
     };
