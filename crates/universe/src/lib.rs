@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
 
@@ -34,7 +35,7 @@ async fn regions_cache_init() -> Arc<Mutex<Regions>> {
 /// This struct represents a region in the EvE universe.
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Region {
-    pub id: u32,
+    pub region_id: u32,
     pub name: String,
 }
 
@@ -59,7 +60,7 @@ impl Region {
             .await?;
 
         let mut cache = REGIONS.get_or_init(regions_cache_init).await.lock().await;
-        cache.0.insert(region.id, region.clone());
+        cache.0.insert(id, region.clone());
 
         Ok(region)
     }
@@ -89,7 +90,7 @@ impl Regions {
                 let info = Region::fetch_region(id).await.unwrap();
 
                 let mut regions_map = regions_map.lock().await;
-                regions_map.insert(info.id, info);
+                regions_map.insert(info.region_id, info);
             });
 
             handles.push(handle);
@@ -180,14 +181,12 @@ impl Systems {
 
                 let mut systems_map = systems_map.lock().await;
 
-                // Map SystemApiResponse fields to System fields
                 systems_map.insert(info.system_id, info);
             });
 
             handles.push(handle);
         }
 
-        // Use futures::future::try_join_all to handle errors from spawned tasks
         futures::future::try_join_all(handles)
             .await
             .expect("Error in one of the spawned tasks");
@@ -206,30 +205,37 @@ STATION API
 ========================================
 */
 
-static STATIONS: OnceCell<Arc<Mutex<HashMap<u32, Station>>>> = OnceCell::const_new();
+static STATIONS: OnceCell<Arc<Mutex<HashMap<u64, Station>>>> = OnceCell::const_new();
 
 type StationResult = Result<Station, Box<dyn Error>>;
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 struct StationApiResponse {
-    #[serde(rename = "station_id")]
-    id: u32,
-    #[serde(rename = "system_id")]
+    station_id: u64,
     system_id: u32,
     name: String,
 }
 
 #[derive(Clone, Deserialize, PartialEq, Debug)]
 pub struct Station {
-    pub id: u32,
+    pub id: u64,
     pub system: System,
     pub name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct StationError(&'static str);
+impl fmt::Display for StationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl std::error::Error for StationError {}
+
 impl Station {
-    pub async fn get_station(id: u32) -> StationResult {
+    pub async fn get_station(id: u64) -> StationResult {
         let cache = STATIONS
-            .get_or_init(async || { Arc::new(Mutex::new(HashMap::new())) })
+            .get_or_init(async || Arc::new(Mutex::new(HashMap::new())))
             .await;
 
         {
@@ -242,24 +248,31 @@ impl Station {
         Station::fetch_station(id).await
     }
 
-    async fn fetch_station(id: u32) -> StationResult {
-        let resp = reqwest::get(esi!("/universe/stations/{}", id))
-            .await?
-            .json::<StationApiResponse>()
-            .await?;
+    async fn fetch_station(id: u64) -> StationResult {
+        if id >= 60000000 && id <= 64000000 {
+            let mut cache = STATIONS.get().unwrap().lock().await;
 
-        let system = System::get_system(resp.system_id).await?;
+            println!("Fetching station {id}");
+            let resp = reqwest::get(esi!("/universe/stations/{}", id)).await?;
+            if resp.error_for_status_ref().is_err() {
+                return Err(Box::new(resp.error_for_status_ref().err().unwrap()));
+            }
+            let resp = resp.json::<StationApiResponse>().await.unwrap();
 
-        let station = Station {
-            id: resp.id,
-            system,
-            name: resp.name,
-        };
+            let system = System::get_system(resp.system_id).await?;
 
-        let mut cache = STATIONS.get().unwrap().lock().await;
-        cache.insert(station.id, station.clone());
+            let station = Station {
+                id: resp.station_id,
+                system,
+                name: resp.name,
+            };
 
-        Ok(station)
+            cache.insert(station.id, station.clone());
+
+            Ok(station)
+        } else {
+            Err(Box::new(StationError("Not a Station")))
+        }
     }
 }
 
