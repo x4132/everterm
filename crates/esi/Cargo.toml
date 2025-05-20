@@ -1,13 +1,12 @@
 [package]
-name = "market"
+name = "esi"
 version = "0.1.0"
 publish.workspace = true
 edition.workspace = true
 
 [dependencies]
-chrono.workspace = true
-universe.workspace = true
-reqwest.workspace = true
-serde.workspace = true
 tokio.workspace = true
+serde.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
 futures.workspace = true

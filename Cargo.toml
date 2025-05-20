@@ -3,9 +3,8 @@ resolver = "2"
 members = [
     "crates/backend",
     "crates/data_fetcher",
-    "crates/market",
-    "crates/universe",
-    "client/src-tauri"
+    "client/src-tauri",
+    "crates/esi",
 ]
 
 [workspace.package]
@@ -17,9 +16,8 @@ edition = "2024"
 # Workspace Members
 backend = { path = "crates/backend" }
 data_fetcher = { path = "crates/data_fetcher" }
-universe = { path = "crates/universe" }
-market = { path = "crates/market" }
 client_tauri = { path = "client/src-tauri" }
+esi = { path = "crates/esi" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }

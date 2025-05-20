@@ -10,7 +10,9 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::Mutex;
-use universe::{Item, Region, Station, esi};
+use crate::universe::{self, Item, Region, Station};
+use crate::esi;
+
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum MarketOrderRange {
@@ -146,7 +148,7 @@ struct MarketAPIResponseOrder {
 impl MarketRegion {
     pub async fn fetch_orders(region: Region) -> Result<MarketRegion, Box<dyn Error>> {
         println!("Loading orders for {}", region.name);
-        let page_1 = reqwest::get(esi!("/markets/{}/orders", region.region_id)).await?;
+        let page_1 = reqwest::get(esi_url!("/markets/{}/orders", region.region_id)).await?;
         let headers = page_1.headers();
         let pages: u32 = headers
             .get("x-pages")
@@ -188,7 +190,7 @@ impl MarketRegion {
         for page in 2..(pages+1) {
             let orders = orders.clone();
             let handle = tokio::spawn(async move {
-                let page = reqwest::get(esi!("/markets/{}/orders?page={}", region.region_id, page))
+                let page = reqwest::get(esi_url!("/markets/{}/orders?page={}", region.region_id, page))
                     .await
                     .expect(&format!("Failed to query page {page}"))
                     .json::<Vec<MarketAPIResponseOrder>>()

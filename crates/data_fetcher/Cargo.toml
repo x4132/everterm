@@ -6,5 +6,4 @@ edition = "2024"
 [dependencies]
 tokio.workspace = true
 reqwest.workspace = true
-universe.workspace = true
-market.workspace = true
+esi.workspace = true

@@ -2,10 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
-
 use serde::Deserialize;
-
-mod macros;
 
 /// This struct represents a geospatial point in the EvE universe.
 #[derive(Clone, Debug, Copy, Deserialize, PartialEq)]
@@ -54,7 +51,7 @@ impl Region {
     }
 
     async fn fetch_region(id: u32) -> RegionResult {
-        let region = reqwest::get(esi!("/universe/regions/{}", id))
+        let region = reqwest::get(esi_url!("/universe/regions/{}", id))
             .await?
             .json::<Region>()
             .await?;
@@ -77,7 +74,7 @@ impl Regions {
     }
 
     pub async fn fetch_all() -> Result<Regions, Box<dyn std::error::Error>> {
-        let ids = reqwest::get(esi!("/universe/regions/"))
+        let ids = reqwest::get(esi_url!("/universe/regions/"))
             .await?
             .json::<Vec<u32>>()
             .await?;
@@ -144,7 +141,7 @@ impl System {
     }
 
     async fn fetch_system(id: u32) -> SystemResult {
-        let system = reqwest::get(esi!("/universe/systems/{}", id))
+        let system = reqwest::get(esi_url!("/universe/systems/{}", id))
             .await?
             .json::<System>()
             .await?;
@@ -167,7 +164,7 @@ impl Systems {
     }
 
     pub async fn fetch_all() -> Result<Systems, Box<dyn std::error::Error>> {
-        let ids = reqwest::get(esi!("/universe/systems/"))
+        let ids = reqwest::get(esi_url!("/universe/systems/"))
             .await?
             .json::<Vec<u32>>()
             .await?;
@@ -253,7 +250,7 @@ impl Station {
             let mut cache = STATIONS.get().unwrap().lock().await;
 
             println!("Fetching station {id}");
-            let resp = reqwest::get(esi!("/universe/stations/{}", id)).await?;
+            let resp = reqwest::get(esi_url!("/universe/stations/{}", id)).await?;
             if resp.error_for_status_ref().is_err() {
                 return Err(Box::new(resp.error_for_status_ref().err().unwrap()));
             }
@@ -312,7 +309,7 @@ impl Item {
     }
 
     async fn fetch_type(id: u32) -> TypeResult {
-        let eve_type = reqwest::get(esi!("/universe/types/{}", id))
+        let eve_type = reqwest::get(esi_url!("/universe/types/{}", id))
             .await?
             .json::<Item>()
             .await?;

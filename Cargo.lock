@@ -657,10 +657,9 @@ dependencies = [
 name = "data_fetcher"
 version = "0.1.0"
 dependencies = [
- "market",
+ "esi",
  "reqwest",
  "tokio",
- "universe",
 ]
 
 [[package]]
@@ -866,6 +865,17 @@ checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "esi"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "reqwest",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -1948,18 +1958,6 @@ name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
-
-[[package]]
-name = "market"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "futures",
- "reqwest",
- "serde",
- "tokio",
- "universe",
-]
 
 [[package]]
 name = "markup5ever"
@@ -4352,16 +4350,6 @@ name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
-
-[[package]]
-name = "universe"
-version = "0.1.0"
-dependencies = [
- "futures",
- "reqwest",
- "serde",
- "tokio",
-]
 
 [[package]]
 name = "untrusted"
