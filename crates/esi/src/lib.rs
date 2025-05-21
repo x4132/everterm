@@ -12,6 +12,7 @@ mod macros;
 pub mod market;
 pub mod universe;
 
+#[derive(Clone, Debug)]
 pub struct ESIClient {
     errors: Arc<Mutex<u32>>,
     error_timeout: Arc<Mutex<u32>>,
@@ -23,7 +24,7 @@ pub struct ESIClient {
 impl ESIClient {
     pub fn new(component_name: &str, platform_name: &str) -> Self {
         ESIClient {
-            errors: Arc::new(Mutex::new(false)),
+            errors: Arc::new(Mutex::new(100)),
             error_timeout: Arc::new(Mutex::new(0)),
             client: reqwest::Client::new(),
             component_name: String::from(component_name),
@@ -33,9 +34,10 @@ impl ESIClient {
 
     pub async fn esi_get(&self, url: &str) -> Result<Response, Error> {
         {
+            // this blocks everything cuz it locks and doesnt unlock until it waits out the timer
             let errors = self.errors.lock().await;
             if *errors <= 10 {
-                self.resolve_esi_errors().await;
+                self.await_esi_timeout().await;
             }
         }
 
@@ -91,7 +93,7 @@ impl ESIClient {
         }
     }
 
-    async fn resolve_esi_errors(&self) {
+    async fn await_esi_timeout(&self) {
         let timeout = self.error_timeout.lock().await;
 
         sleep(Duration::from_secs((*timeout).into())).await
