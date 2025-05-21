@@ -1,10 +1,10 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "everterm",
+  "productName": "EvERterm",
   "version": "0.1.0",
   "identifier": "com.tauri.dev",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "..",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "EvERTerm",
+        "title": "EvERterm",
         "width": 800,
         "height": 600,
         "resizable": true,
