@@ -3,8 +3,10 @@ import CommandInput from "@/components/CommandInput.vue";
 </script>
 
 <template ">
-<div class="dark w-full h-full dark:">
-    <CommandInput />
+<div class="dark w-full h-full bg-background text-primary">
+    <div class="flex">
+        <CommandInput class="grow" />
+    </div>
 </div>
 </template>
 
