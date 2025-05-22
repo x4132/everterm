@@ -1,12 +1,11 @@
 use dashmap::DashMap;
 use serde::Deserialize;
 use std::error::Error;
-use std::fmt::{self, write};
+use std::fmt::{self};
 use std::ops::Range;
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{Mutex, OnceCell};
+use std::sync::Arc;
 
-use crate::{ESIClient, esi_url};
+use crate::ESIClient;
 
 /// This struct represents a geospatial point in the EvE universe.
 #[derive(Clone, Debug, Copy, Deserialize, PartialEq)]
@@ -107,20 +106,15 @@ impl Regions {
     }
 
     /// Fetches all regions in the universe and returns a Regions object with all regions
-    pub async fn fetch_all(client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn get_all(client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
         let regions = Regions::new(client);
         // WHY - is this really necessary
         let ids: Vec<RegionID> = regions
             .client
             .esi_get("/universe/regions/")
             .await?
-            .json::<Vec<u32>>()
-            .await?
-            .into_iter()
-            .map(|v| RegionID::try_from(v))
-            .filter(|v| v.is_ok())
-            .map(|v| v.unwrap())
-            .collect();
+            .json::<Vec<RegionID>>()
+            .await?;
 
         let regions_map: Arc<DashMap<RegionID, Region>> = Arc::new(DashMap::new());
         let mut handles = Vec::new();
@@ -182,97 +176,190 @@ impl Regions {
     }
 }
 
-// /**
-// ========================================
-// SYSTEM API
-// ========================================
-// */
+/**
+========================================
+SYSTEM API
+========================================
+*/
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct System {
-//     pub system_id: u32,
-//     pub constellation_id: u32,
-//     pub position: Point,
-//     pub security_status: f32,
-//     pub name: String,
-// }
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Copy)]
+pub struct SystemID {
+    value: u32,
+}
+impl SystemID {
+    pub fn get(&self) -> u32 {
+        self.value
+    }
+    pub fn set(&mut self, new_val: u32) {
+        self.value = new_val
+    }
+}
 
-// impl System {
-//     pub async fn get_system(id: u32) -> SystemResult {
-//         let cache = SYSTEMS.get_or_init(systems_cache_init).await;
+impl<'de> Deserialize<'de> for SystemID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u32::deserialize(deserializer)?;
+        SystemID::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
 
-//         {
-//             let cache = cache.lock().await;
-//             if let Some(data) = cache.0.get(&id) {
-//                 return Ok(data.clone());
-//             }
-//         }
+impl TryFrom<u32> for SystemID {
+    type Error = InvalidIDError;
 
-//         System::fetch_system(id).await
-//     }
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            30_000_000..40_000_000 => Ok(SystemID { value }),
+            _ => Err(InvalidIDError {
+                value,
+                acceptable: 30_000_000..40_000_000,
+            }),
+        }
+    }
+}
 
-//     async fn fetch_system(id: u32) -> SystemResult {
-//         let system = reqwest::get(esi_url!("/universe/systems/{}", id))
-//             .await?
-//             .json::<System>()
-//             .await?;
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct System {
+    #[serde(rename = "system_id")]
+    pub id: SystemID,
+    pub constellation_id: ConstellationID,
+    pub position: Point,
+    pub security_status: f32,
+    pub name: String,
+}
 
-//         let mut cache = SYSTEMS.get_or_init(systems_cache_init).await.lock().await;
-//         cache.0.insert(system.system_id, system.clone());
+type SystemResult = Result<System, Box<dyn Error>>;
 
-//         Ok(system)
-//     }
-// }
+#[derive(Clone, Debug)]
+pub struct Systems {
+    pub map: DashMap<SystemID, System>,
+    client: ESIClient,
+}
 
-// type SystemResult = Result<System, Box<dyn Error>>;
+impl Systems {
+    pub fn new(client: ESIClient) -> Self {
+        Systems {
+            map: DashMap::new(),
+            client,
+        }
+    }
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct Systems(pub HashMap<u32, System>);
+    /// Fetches all regions in the universe and returns a Regions object with all regions
+    pub async fn get_all(client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+        let systems = Systems::new(client);
+        // WHY - is this really necessary
+        let ids: Vec<SystemID> = systems
+            .client
+            .esi_get("/universe/systems/")
+            .await?
+            .json::<Vec<SystemID>>()
+            .await?;
 
-// impl Systems {
-//     pub fn new() -> Self {
-//         Systems(HashMap::new())
-//     }
+        let systems_map: Arc<DashMap<SystemID, System>> = Arc::new(DashMap::new());
+        let mut handles = Vec::new();
 
-//     pub async fn fetch_all() -> Result<Systems, Box<dyn std::error::Error>> {
-//         let ids = reqwest::get(esi_url!("/universe/systems/"))
-//             .await?
-//             .json::<Vec<u32>>()
-//             .await?;
-//         let systems_map = Arc::new(Mutex::new(HashMap::new()));
-//         let mut handles = Vec::new();
+        let systems = Arc::new(systems);
+        for id in ids {
+            let systems_map = systems_map.clone();
+            let systems = systems.clone();
+            let handle = tokio::spawn(async move {
+                let info = systems.get_system(id).await.expect("Failed to load region");
 
-//         for id in ids {
-//             let systems_map = systems_map.clone();
-//             let handle = tokio::spawn(async move {
-//                 let info = System::fetch_system(id).await.unwrap();
+                systems_map.insert(info.id, info);
+            });
 
-//                 let mut systems_map = systems_map.lock().await;
+            handles.push(handle);
+        }
 
-//                 systems_map.insert(info.system_id, info);
-//             });
+        futures::future::try_join_all(handles)
+            .await
+            .expect("Error in one of the spawned tasks");
 
-//             handles.push(handle);
-//         }
+        let mut systems = Arc::try_unwrap(systems).expect("Arc still has multiple strong counts");
 
-//         futures::future::try_join_all(handles)
-//             .await
-//             .expect("Error in one of the spawned tasks");
+        systems.map = Arc::try_unwrap(systems_map).expect("Arc still has multiple strong counts");
 
-//         let final_map = Arc::try_unwrap(systems_map)
-//             .expect("Arc still has multiple strong counts")
-//             .into_inner();
+        Ok(systems)
+    }
 
-//         Ok(Systems(final_map))
-//     }
-// }
+    pub async fn get_system(&self, id: SystemID) -> SystemResult {
+        {
+            if let Some(data) = self.map.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        self.fetch_system(id).await
+    }
+
+    async fn fetch_system(&self, id: SystemID) -> SystemResult {
+        let system: System;
+
+        {
+            self.map.get(&id);
+            system = self
+                .client
+                .esi_get(&format!("/universe/systems/{}/", id.get()))
+                .await?
+                .json::<System>()
+                .await?;
+        }
+
+        self.map.insert(id, system.clone());
+
+        Ok(system)
+    }
+}
+
+/**
+========================================
+CONSTELLATION API
+========================================
+*/
+
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Copy)]
+pub struct ConstellationID {
+    value: u32,
+}
+impl ConstellationID {
+    pub fn get(&self) -> u32 {
+        self.value
+    }
+    pub fn set(&mut self, new_val: u32) {
+        self.value = new_val
+    }
+}
+
+impl<'de> Deserialize<'de> for ConstellationID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u32::deserialize(deserializer)?;
+        ConstellationID::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl TryFrom<u32> for ConstellationID {
+    type Error = InvalidIDError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            20_000_000..30_000_000 => Ok(ConstellationID { value }),
+            _ => Err(InvalidIDError {
+                value,
+                acceptable: 20_000_000..30_000_000,
+            }),
+        }
+    }
+}
 
 // /**
 // ========================================
 // STATION API
 // ========================================
 // */
-
 // static STATIONS: OnceCell<Arc<Mutex<HashMap<u64, Station>>>> = OnceCell::const_new();
 
 // type StationResult = Result<Station, Box<dyn Error>>;
@@ -349,7 +436,6 @@ impl Regions {
 // TYPES API
 // ========================================
 // */
-
 // static TYPES: OnceCell<Arc<Mutex<HashMap<u32, Item>>>> = OnceCell::const_new();
 
 // #[derive(Clone, Deserialize, PartialEq, Debug)]
