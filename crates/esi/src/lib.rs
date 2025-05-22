@@ -31,7 +31,7 @@ impl ESIClient {
             component_name: String::from(component_name),
             platform_name: String::from(platform_name),
             // TODO: bump this up on prod when i jack up the ulimit (fd limit)
-            connect_pool: Arc::new(Semaphore::new(64))
+            connect_pool: Arc::new(Semaphore::new(127))
         }
     }
 
