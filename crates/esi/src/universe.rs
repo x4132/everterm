@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::ESIClient;
 
 /// This struct represents a geospatial point in the EvE universe.
+/// i have no idea what that means
 #[derive(Clone, Debug, Copy, Deserialize, PartialEq)]
 pub struct Point {
     x: f64,
