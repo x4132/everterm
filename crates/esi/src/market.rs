@@ -238,7 +238,6 @@ impl Market {
         let orders = Arc::try_unwrap(orders)
             .expect("Arc still has multiple strong counts")
             .into_inner();
-        println!("API response len {}", orders.len());
         for order_response in orders {
             if !(&market).items.contains_key(&order_response.type_id) {
                 market.items.insert(
