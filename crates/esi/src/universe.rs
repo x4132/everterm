@@ -95,11 +95,11 @@ type RegionResult = Result<Region, Box<dyn Error>>;
 #[derive(Clone, Debug)]
 pub struct Regions {
     pub map: DashMap<RegionID, Region>,
-    client: ESIClient,
+    client: Arc<ESIClient>,
 }
 
 impl Regions {
-    pub fn new(client: ESIClient) -> Self {
+    pub fn new(client: Arc<ESIClient>) -> Self {
         Regions {
             map: DashMap::new(),
             client,
@@ -107,7 +107,7 @@ impl Regions {
     }
 
     /// Fetches all regions in the universe and returns a Regions object with all regions
-    pub async fn get_all(client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn get_all(client: Arc<ESIClient>) -> Result<Self, Box<dyn std::error::Error>> {
         let regions = Regions::new(client);
         // WHY - is this really necessary
         let ids: Vec<RegionID> = regions
@@ -235,11 +235,11 @@ type SystemResult = Result<System, Box<dyn Error>>;
 #[derive(Clone, Debug)]
 pub struct Systems {
     pub map: DashMap<SystemID, System>,
-    client: ESIClient,
+    client: Arc<ESIClient>,
 }
 
 impl Systems {
-    pub fn new(client: ESIClient) -> Self {
+    pub fn new(client: Arc<ESIClient>) -> Self {
         Systems {
             map: DashMap::new(),
             client,
@@ -247,7 +247,7 @@ impl Systems {
     }
 
     /// Fetches all regions in the universe and returns a Regions object with all regions
-    pub async fn get_all(client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn get_all(client: Arc<ESIClient>) -> Result<Self, Box<dyn std::error::Error>> {
         let systems = Systems::new(client);
         // WHY - is this really necessary
         let ids: Vec<SystemID> = systems
@@ -408,11 +408,11 @@ pub struct Station {
 #[derive(Clone, Debug)]
 pub struct Stations {
     pub map: DashMap<StationID, Station>,
-    client: ESIClient,
+    client: Arc<ESIClient>,
 }
 
 impl Stations {
-    pub fn new(client: ESIClient) -> Self {
+    pub fn new(client: Arc<ESIClient>) -> Self {
         Stations {
             map: DashMap::new(),
             client,
@@ -506,11 +506,11 @@ type ItemResult = Result<Item, Box<dyn Error>>;
 
 pub struct Items {
     pub map: DashMap<u32, Item>,
-    client: ESIClient,
+    client: Arc<ESIClient>,
 }
 
 impl Items {
-    pub fn new(client: ESIClient) -> Self {
+    pub fn new(client: Arc<ESIClient>) -> Self {
         Items {
             map: DashMap::new(),
             client,
