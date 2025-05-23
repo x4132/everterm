@@ -23,8 +23,8 @@ impl Point {
 
 #[derive(Debug)]
 pub struct InvalidIDError {
-    value: u32,
-    acceptable: Range<u32>,
+    value: u64,
+    acceptable: Range<u64>,
 }
 
 impl fmt::Display for InvalidIDError {
@@ -75,7 +75,7 @@ impl TryFrom<u32> for RegionID {
         match value {
             10_000_000..20_000_000 => Ok(RegionID { value }),
             _ => Err(InvalidIDError {
-                value,
+                value: value.into(),
                 acceptable: 10_000_000..20_000_000,
             }),
         }
@@ -213,7 +213,7 @@ impl TryFrom<u32> for SystemID {
         match value {
             30_000_000..40_000_000 => Ok(SystemID { value }),
             _ => Err(InvalidIDError {
-                value,
+                value: value.into(),
                 acceptable: 30_000_000..40_000_000,
             }),
         }
@@ -347,13 +347,12 @@ impl TryFrom<u32> for ConstellationID {
         match value {
             20_000_000..30_000_000 => Ok(ConstellationID { value }),
             _ => Err(InvalidIDError {
-                value,
+                value: value.into(),
                 acceptable: 20_000_000..30_000_000,
             }),
         }
     }
 }
-
 
 // ========================================
 // STATION API
@@ -362,13 +361,13 @@ impl TryFrom<u32> for ConstellationID {
 // TODO: structure API
 #[derive(Clone, PartialEq, Debug, Eq, Hash, Copy)]
 pub struct StationID {
-    value: u32,
+    value: u64,
 }
 impl StationID {
-    pub fn get(&self) -> u32 {
+    pub fn get(&self) -> u64 {
         self.value
     }
-    pub fn set(&mut self, new_val: u32) {
+    pub fn set(&mut self, new_val: u64) {
         self.value = new_val
     }
 }
@@ -378,15 +377,15 @@ impl<'de> Deserialize<'de> for StationID {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = u32::deserialize(deserializer)?;
+        let value = u64::deserialize(deserializer)?;
         StationID::try_from(value).map_err(serde::de::Error::custom)
     }
 }
 
-impl TryFrom<u32> for StationID {
+impl TryFrom<u64> for StationID {
     type Error = InvalidIDError;
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value {
             60_000_000..64_000_000 => Ok(StationID { value }),
             _ => Err(InvalidIDError {
@@ -409,21 +408,21 @@ pub struct Station {
 #[derive(Clone, Debug)]
 pub struct Stations {
     pub map: DashMap<StationID, Station>,
-    client: ESIClient
+    client: ESIClient,
 }
 
 impl Stations {
     pub fn new(client: ESIClient) -> Self {
         Stations {
             map: DashMap::new(),
-            client
+            client,
         }
     }
 
     pub async fn get_station(&self, id: StationID) -> StationResult {
         {
             if let Some(data) = self.map.get(&id) {
-                return Ok(data.clone())
+                return Ok(data.clone());
             }
         }
 
@@ -435,7 +434,12 @@ impl Stations {
 
         {
             self.map.get(&id);
-            system = self.client.esi_get(&format!("/universe/stations/{}/", id.get())).await?.json::<Station>().await?;
+            system = self
+                .client
+                .esi_get(&format!("/universe/stations/{}/", id.get()))
+                .await?
+                .json::<Station>()
+                .await?;
         }
 
         self.map.insert(id, system.clone());
@@ -453,11 +457,7 @@ impl Stations {
 pub struct NonMarketableTypeError(u32);
 impl fmt::Display for NonMarketableTypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Type {} is not marketable",
-            self.0
-        )
+        write!(f, "Type {} is not marketable", self.0)
     }
 }
 impl Error for NonMarketableTypeError {}
@@ -470,7 +470,7 @@ pub struct Item {
     icon_id: u32,
     market_group_id: u32,
     name: String,
-    description: String
+    description: String,
 }
 
 impl TryFrom<ItemRaw> for Item {
@@ -484,9 +484,9 @@ impl TryFrom<ItemRaw> for Item {
                 icon_id: value.icon_id,
                 market_group_id,
                 name: value.name,
-                description: value.description
+                description: value.description,
             }),
-            None => Err(NonMarketableTypeError(value.type_id))
+            None => Err(NonMarketableTypeError(value.type_id)),
         }
     }
 }
@@ -499,21 +499,21 @@ pub struct ItemRaw {
     icon_id: u32,
     market_group_id: Option<u32>,
     name: String,
-    description: String
+    description: String,
 }
 
 type ItemResult = Result<Item, Box<dyn Error>>;
 
 pub struct Items {
     pub map: DashMap<u32, Item>,
-    client: ESIClient
+    client: ESIClient,
 }
 
 impl Items {
     pub fn new(client: ESIClient) -> Self {
         Items {
             map: DashMap::new(),
-            client
+            client,
         }
     }
 
@@ -529,7 +529,9 @@ impl Items {
     }
 
     pub async fn fetch_item_raw(&self, id: u32) -> Result<ItemRaw, Box<dyn Error>> {
-        let raw: ItemRaw = self.client.esi_get(&format!("/universe/types/{id}/"))
+        let raw: ItemRaw = self
+            .client
+            .esi_get(&format!("/universe/types/{id}/"))
             .await?
             .json::<ItemRaw>()
             .await?;

@@ -1,20 +1,17 @@
-use chrono::{DateTime, Utc};
-use reqwest::header::{EXPIRES, LAST_MODIFIED};
+use chrono::{DateTime, ParseError, Utc};
+use dashmap::DashMap;
+use reqwest::header::{HeaderValue, EXPIRES, LAST_MODIFIED};
 use serde::{
     Deserialize,
     de::{self, Visitor},
 };
+use tokio::sync::Mutex;
 use std::{
-    error::Error,
-    fmt::{self},
-    sync::Arc,
+    collections::BTreeSet,
+    fmt::{self}, sync::Arc,
 };
 
-use crate::universe::StationID;
-// use tokio::sync::Mutex;
-// use crate::universe::{self, Item, Region, Station};
-// use crate::esi;
-
+use crate::{universe::{Item, RegionID, Regions, StationID, SystemID}, ESIClient};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum MarketOrderRange {
@@ -60,197 +57,110 @@ impl<'de> Deserialize<'de> for MarketOrderRange {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct MarketAPIResponseOrder {
+    duration: u32,
+    is_buy_order: bool,
+    issued: String,
+    location_id: StationID,
+    min_volume: u32,
+    order_id: u64,
+    price: f64,
+    range: MarketOrderRange,
+    system_id: SystemID,
+    type_id: u32,
+    volume_remain: u32,
+    volume_total: u32,
+}
+
 #[derive(Clone, Deserialize, PartialEq, Debug)]
-pub struct MarketOrder {
+pub struct Order {
     pub id: u64,
-    // duration: u32, - this is not really relevant for any user, there is no reason to know when it expires over when it was issued
     pub is_buy_order: bool,
     pub issued: DateTime<Utc>,
-    pub location: StationID,
+    pub expiry: DateTime<Utc>,
+    pub location_id: StationID,
+    pub system_id: SystemID,
     pub min_volume: u32,
     pub range: MarketOrderRange,
     pub volume_remain: u32,
     pub volume_total: u32,
 }
 
-// impl MarketOrder {
-//     async fn from_api_response(value: MarketAPIResponseOrder) -> Result<Self, Box<dyn Error>> {
-//         let issued = DateTime::parse_from_rfc3339(&value.issued)?.to_utc();
-//         // println!("Attempting structure {}", value.location_id);
+impl TryFrom<MarketAPIResponseOrder> for Order {
+    type Error = ParseError;
 
-//         Ok(MarketOrder {
-//             id: value.order_id,
-//             is_buy_order: value.is_buy_order,
-//             issued: issued,
-//             location: Station::get_station(value.location_id).await?,
-//             min_volume: value.min_volume,
-//             range: value.range,
-//             volume_remain: value.volume_remain,
-//             volume_total: value.volume_total,
-//         })
-//     }
-// }
+    fn try_from(value: MarketAPIResponseOrder) -> Result<Self, Self::Error> {
+        let issue_date = DateTime::parse_from_rfc3339(&value.issued)?.to_utc();
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct ItemOrderBook {
-//     pub item: Item,
-//     pub orders: Vec<MarketOrder>,
-//     pub time: Option<DateTime<Utc>>,
-// }
+        Ok(Order {
+            id: value.order_id,
+            is_buy_order: value.is_buy_order,
+            issued: issue_date,
+            expiry: issue_date + chrono::TimeDelta::days(value.duration.into()),
+            location_id: value.location_id,
+            system_id: value.system_id,
+            min_volume: value.min_volume,
+            range: value.range,
+            volume_total: value.volume_total,
+            volume_remain: value.volume_remain,
+        })
+    }
+}
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct MarketOrderBook {
-//     pub items: Vec<ItemOrderBook>,
-//     pub time: DateTime<Utc>,
-// }
+/// Carries the current orders at a single snapshot.
+#[derive(Clone, Debug)]
+pub struct OrderBook {
+    pub item: u64,
+    pub orders: BTreeSet<Order>,
+}
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct MarketRegion {
-//     pub region: Region,
-//     pub orders: Vec<MarketOrder>,
-//     pub cache_reset_time: DateTime<Utc>,
-//     pub fetch_time: DateTime<Utc>,
-// }
+pub struct Market {
+    pub items: DashMap<u64, OrderBook>,
+    pub last_modified: DateTime<Utc>,
+    pub expires: DateTime<Utc>,
+}
 
-// impl MarketRegion {
-//     pub fn new_with_orders(
-//         region: Region,
-//         orders: Vec<MarketOrder>,
-//         cache_reset_time: DateTime<Utc>,
-//         fetch_time: DateTime<Utc>,
-//     ) -> Self {
-//         MarketRegion {
-//             region,
-//             orders,
-//             cache_reset_time,
-//             fetch_time,
-//         }
-//     }
-//     pub fn new(region: Region, cache_reset_time: DateTime<Utc>, fetch_time: DateTime<Utc>) -> Self {
-//         MarketRegion::new_with_orders(region, Vec::new(), cache_reset_time, fetch_time)
-//     }
-// }
+impl Market {
+    /// loads the market orders of a region.
+    // pub async fn fetch_regions(regions: Vec<RegionID>, client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+    //     let market = Market {
+    //         items: DashMap::new(),
+    //         time: DateTime::UNIX_EPOCH
+    //     };
 
-// #[derive(Deserialize, Debug)]
-// struct MarketAPIResponseOrder {
-//     duration: u32,
-//     is_buy_order: bool,
-//     issued: String,
-//     location_id: u64,
-//     min_volume: u32,
-//     order_id: u64,
-//     price: f64,
-//     range: MarketOrderRange,
-//     system_id: u32,
-//     type_id: u32,
-//     volume_remain: u32,
-//     volume_total: u32,
-// }
+    //     for region in regions {
 
-// impl MarketRegion {
-//     pub async fn fetch_orders(region: Region) -> Result<MarketRegion, Box<dyn Error>> {
-//         println!("Loading orders for {}", region.name);
-//         let page_1 = reqwest::get(esi_url!("/markets/{}/orders", region.region_id)).await?;
-//         let headers = page_1.headers();
-//         let pages: u32 = headers
-//             .get("x-pages")
-//             .expect("Failed to retrieve X-Pages header on region market orders")
-//             .to_str()
-//             .unwrap()
-//             .parse()
-//             .expect("X-Pages header invalid file format");
-//         let last_modified = DateTime::parse_from_rfc2822(
-//             headers
-//                 .get(LAST_MODIFIED)
-//                 .expect("Failed to retreive last-modified header")
-//                 .to_str()
-//                 .unwrap(),
-//         )
-//         .expect("Failed to parse last-modified datetime string")
-//         .to_utc();
-//         let expires = DateTime::parse_from_rfc2822(
-//             headers
-//                 .get(EXPIRES)
-//                 .expect("Failed to retreive expiry date")
-//                 .to_str()
-//                 .unwrap(),
-//         )
-//         .expect("Failed to parse expiry date")
-//         .to_utc();
+    //     }
+    // }
 
-//         println!(
-//             "Loading {pages} pages for the region \"{}\", last updated {}, expires {}",
-//             region.name,
-//             last_modified.to_string(),
-//             expires.to_string()
-//         );
+    pub async fn fetch_region(region: RegionID, client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
+        let first_page = client.esi_get(&format!("/markets/{}/orders/", region.get())).await?;
+        let first_page_headers = first_page.headers();
+        let num_pages: usize = first_page_headers.get("x-pages").unwrap_or(&HeaderValue::from_static("1")).to_str().unwrap().parse().unwrap();
+        let last_modified: DateTime<Utc> = DateTime::parse_from_rfc2822(first_page_headers.get(LAST_MODIFIED).expect("No LAST_MODIFIED header in market data response?").to_str()?)?.to_utc();
+        let expires: DateTime<Utc> = DateTime::parse_from_rfc2822(first_page_headers.get(EXPIRES).expect("No EXPIRES header in market data response?").to_str()?)?.to_utc();
 
-//         let orders = page_1.json::<Vec<MarketAPIResponseOrder>>().await?;
-//         let orders = Arc::new(Mutex::new(orders));
-//         let mut handles = Vec::new();
+        let pages: Vec<MarketAPIResponseOrder> = first_page.json::<Vec<MarketAPIResponseOrder>>().await?;
+        let pages: Arc<Mutex<Vec<MarketAPIResponseOrder>>> = Arc::new(Mutex::new(pages));
+        let client = Arc::new(client);
+        let mut handles = Vec::new();
+        for page in 2..=num_pages {
+            let pages = pages.clone();
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let page = client.esi_get(&format!("/markets/{}/orders/?page={}", region.get(), page)).await.expect("Failed to load page").json::<Vec<MarketAPIResponseOrder>>().await.expect("Failed to deserialize JSON");
+                let mut pages = pages.lock().await;
+                pages.extend(page.into_iter());
+            });
 
-//         for page in 2..(pages+1) {
-//             let orders = orders.clone();
-//             let handle = tokio::spawn(async move {
-//                 let page = reqwest::get(esi_url!("/markets/{}/orders?page={}", region.region_id, page))
-//                     .await
-//                     .expect(&format!("Failed to query page {page}"))
-//                     .json::<Vec<MarketAPIResponseOrder>>()
-//                     .await
-//                     .unwrap();
-//                 let mut orders = orders.lock().await;
-//                 orders.extend(page);
-//             });
+            handles.push(handle);
+        }
 
-//             handles.push(handle);
-//         }
-
-//         futures::future::try_join_all(handles)
-//             .await
-//             .expect("Error retreiving orders for market region");
-
-//         let orders = Arc::try_unwrap(orders)
-//             .expect("Arc still has multiple strong counts")
-//             .into_inner();
-
-//         println!("Converting {} orders", orders.len());
-
-//         let region = Arc::new(std::sync::Mutex::new(MarketRegion::new(
-//             region,
-//             expires,
-//             last_modified,
-//         )));
-//         let mut handles = Vec::new();
-//         for order in orders {
-//             let region = region.clone();
-//             let handle = tokio::spawn(async move {
-//                 match MarketOrder::from_api_response(order).await {
-//                     Ok(order) => {
-//                         region.lock().expect("Unable to acquire lock on regional orders log").orders.push(order);
-//                     }
-//                     Err(err) => {
-//                         if !err.is::<universe::StationError>() {
-//                             println!("Failed to convert order");
-//                             eprintln!("{err}");
-//                         }
-//                     }
-//                 };
-//             });
-//             handles.push(handle);
-//         }
-//         futures::future::try_join_all(handles)
-//             .await
-//             .expect("Error formatting Market Orders");
-
-//         Ok(Arc::try_unwrap(region).expect("Arc still has multiple strong counts").into_inner().expect("Regional Orders Mutex is Poisoned"))
-//     }
-// }
-
-// // mod tests {
-// //     use super::*;
-
-// //     #[test]
-// //     fn fetch_market_orders() {
-
-// //    }
-// // }
+        Ok(Market {
+            items: DashMap::new(),
+            last_modified: DateTime::UNIX_EPOCH,
+            expires: DateTime::UNIX_EPOCH
+        })
+    }
+}

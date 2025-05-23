@@ -6,7 +6,6 @@ pub const ESI_URL: &'static str = "https://esi.evetech.net/latest";
 ///
 /// ```rust
 /// # #![allow(unused_must_use)]
-/// use universe::esi;
 /// let character_id = 90000001;
 /// let url = esi!("/characters/{}/", character_id);
 /// assert_eq!(url, "https://esi.evetech.net/latest/characters/90000001/");
