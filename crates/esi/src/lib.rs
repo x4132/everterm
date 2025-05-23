@@ -5,7 +5,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{Mutex, Semaphore};
-use std::net::ToSocketAddrs;
 use tokio::time::sleep;
 
 mod macros;

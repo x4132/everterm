@@ -265,7 +265,7 @@ impl Systems {
             let systems_map = systems_map.clone();
             let systems = systems.clone();
             let handle = tokio::spawn(async move {
-                let info = systems.get_system(id).await.expect("Failed to load region");
+                let info = systems.get_system(id).await.expect("Failed to load system");
 
                 systems_map.insert(info.id, info);
             });
@@ -313,11 +313,9 @@ impl Systems {
     }
 }
 
-/**
-========================================
-CONSTELLATION API
-========================================
-*/
+// ========================================
+// CONSTELLATION API
+// ========================================
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash, Copy)]
 pub struct ConstellationID {
@@ -356,125 +354,186 @@ impl TryFrom<u32> for ConstellationID {
     }
 }
 
-// /**
+
 // ========================================
 // STATION API
 // ========================================
-// */
-// static STATIONS: OnceCell<Arc<Mutex<HashMap<u64, Station>>>> = OnceCell::const_new();
 
-// type StationResult = Result<Station, Box<dyn Error>>;
+// TODO: structure API
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Copy)]
+pub struct StationID {
+    value: u32,
+}
+impl StationID {
+    pub fn get(&self) -> u32 {
+        self.value
+    }
+    pub fn set(&mut self, new_val: u32) {
+        self.value = new_val
+    }
+}
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// struct StationApiResponse {
-//     station_id: u64,
-//     system_id: u32,
-//     name: String,
-// }
+impl<'de> Deserialize<'de> for StationID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u32::deserialize(deserializer)?;
+        StationID::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct Station {
-//     pub id: u64,
-//     pub system: System,
-//     pub name: String,
-// }
+impl TryFrom<u32> for StationID {
+    type Error = InvalidIDError;
 
-// #[derive(Debug, Clone)]
-// pub struct StationError(&'static str);
-// impl fmt::Display for StationError {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(f, "{}", self.0)
-//     }
-// }
-// impl std::error::Error for StationError {}
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            60_000_000..64_000_000 => Ok(StationID { value }),
+            _ => Err(InvalidIDError {
+                value,
+                acceptable: 60_000_000..64_000_000,
+            }),
+        }
+    }
+}
 
-// impl Station {
-//     pub async fn get_station(id: u64) -> StationResult {
-//         let cache = STATIONS
-//             .get_or_init(async || Arc::new(Mutex::new(HashMap::new())))
-//             .await;
+type StationResult = Result<Station, Box<dyn Error>>;
 
-//         {
-//             let cache = cache.lock().await;
-//             if let Some(data) = cache.get(&id) {
-//                 return Ok(data.clone());
-//             }
-//         }
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct Station {
+    pub id: StationID,
+    pub system_id: SystemID,
+    pub name: String,
+}
 
-//         Station::fetch_station(id).await
-//     }
+#[derive(Clone, Debug)]
+pub struct Stations {
+    pub map: DashMap<StationID, Station>,
+    client: ESIClient
+}
 
-//     async fn fetch_station(id: u64) -> StationResult {
-//         if id >= 60000000 && id <= 64000000 {
-//             let mut cache = STATIONS.get().unwrap().lock().await;
+impl Stations {
+    pub fn new(client: ESIClient) -> Self {
+        Stations {
+            map: DashMap::new(),
+            client
+        }
+    }
 
-//             println!("Fetching station {id}");
-//             let resp = reqwest::get(esi_url!("/universe/stations/{}", id)).await?;
-//             if resp.error_for_status_ref().is_err() {
-//                 return Err(Box::new(resp.error_for_status_ref().err().unwrap()));
-//             }
-//             let resp = resp.json::<StationApiResponse>().await.unwrap();
+    pub async fn get_station(&self, id: StationID) -> StationResult {
+        {
+            if let Some(data) = self.map.get(&id) {
+                return Ok(data.clone())
+            }
+        }
 
-//             let system = System::get_system(resp.system_id).await?;
+        self.fetch_station(id).await
+    }
 
-//             let station = Station {
-//                 id: resp.station_id,
-//                 system,
-//                 name: resp.name,
-//             };
+    async fn fetch_station(&self, id: StationID) -> StationResult {
+        let system: Station;
 
-//             cache.insert(station.id, station.clone());
+        {
+            self.map.get(&id);
+            system = self.client.esi_get(&format!("/universe/stations/{}/", id.get())).await?.json::<Station>().await?;
+        }
 
-//             Ok(station)
-//         } else {
-//             Err(Box::new(StationError("Not a Station")))
-//         }
-//     }
-// }
+        self.map.insert(id, system.clone());
 
-// /**
+        Ok(system)
+    }
+}
+
 // ========================================
 // TYPES API
 // ========================================
-// */
-// static TYPES: OnceCell<Arc<Mutex<HashMap<u32, Item>>>> = OnceCell::const_new();
+// types are just u32s, so there isn't a dedicated struct for them
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct Item {
-//     type_id: u32,
-//     group_id: u32,
-//     icon_id: u32,
-//     market_group_id: u32,
-//     name: String,
-//     description: String,
-// }
+#[derive(Debug)]
+pub struct NonMarketableTypeError(u32);
+impl fmt::Display for NonMarketableTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Type {} is not marketable",
+            self.0
+        )
+    }
+}
+impl Error for NonMarketableTypeError {}
 
-// type TypeResult = Result<Item, Box<dyn Error>>;
-// impl Item {
-//     pub async fn get_type(id: u32) -> TypeResult {
-//         let cache = TYPES
-//             .get_or_init(async || Arc::new(Mutex::new(HashMap::new())))
-//             .await;
+/// A marketable item. For non-marketable items, see [`ItemRaw`].
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct Item {
+    id: u32,
+    group_id: u32,
+    icon_id: u32,
+    market_group_id: u32,
+    name: String,
+    description: String
+}
 
-//         {
-//             let cache = cache.lock().await;
-//             if let Some(data) = cache.get(&id) {
-//                 return Ok(data.clone());
-//             }
-//         }
+impl TryFrom<ItemRaw> for Item {
+    type Error = NonMarketableTypeError;
 
-//         Item::fetch_type(id).await
-//     }
+    fn try_from(value: ItemRaw) -> Result<Self, Self::Error> {
+        match value.market_group_id {
+            Some(market_group_id) => Ok(Item {
+                id: value.type_id,
+                group_id: value.group_id,
+                icon_id: value.icon_id,
+                market_group_id,
+                name: value.name,
+                description: value.description
+            }),
+            None => Err(NonMarketableTypeError(value.type_id))
+        }
+    }
+}
 
-//     async fn fetch_type(id: u32) -> TypeResult {
-//         let eve_type = reqwest::get(esi_url!("/universe/types/{}", id))
-//             .await?
-//             .json::<Item>()
-//             .await?;
+/// An optionally marketable item.
+#[derive(Deserialize)]
+pub struct ItemRaw {
+    type_id: u32,
+    group_id: u32,
+    icon_id: u32,
+    market_group_id: Option<u32>,
+    name: String,
+    description: String
+}
 
-//         let mut cache = TYPES.get().unwrap().lock().await;
-//         cache.insert(eve_type.type_id, eve_type.clone());
+type ItemResult = Result<Item, Box<dyn Error>>;
 
-//         Ok(eve_type)
-//     }
-// }
+pub struct Items {
+    pub map: DashMap<u32, Item>,
+    client: ESIClient
+}
+
+impl Items {
+    pub fn new(client: ESIClient) -> Self {
+        Items {
+            map: DashMap::new(),
+            client
+        }
+    }
+
+    /// gets a marketable item from an item id
+    pub async fn get_item(&self, id: u32) -> ItemResult {
+        {
+            if let Some(data) = self.map.get(&id) {
+                return Ok(data.clone());
+            }
+        }
+
+        Ok(Item::try_from(self.fetch_item_raw(id).await?)?)
+    }
+
+    pub async fn fetch_item_raw(&self, id: u32) -> Result<ItemRaw, Box<dyn Error>> {
+        let raw: ItemRaw = self.client.esi_get(&format!("/universe/types/{id}/"))
+            .await?
+            .json::<ItemRaw>()
+            .await?;
+
+        Ok(raw)
+    }
+}

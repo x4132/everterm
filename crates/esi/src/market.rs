@@ -1,75 +1,77 @@
-// use chrono::{DateTime, Utc};
-// use reqwest::header::{EXPIRES, LAST_MODIFIED};
-// use serde::{
-//     Deserialize,
-//     de::{self, Visitor},
-// };
-// use std::{
-//     error::Error,
-//     fmt::{self},
-//     sync::Arc,
-// };
+use chrono::{DateTime, Utc};
+use reqwest::header::{EXPIRES, LAST_MODIFIED};
+use serde::{
+    Deserialize,
+    de::{self, Visitor},
+};
+use std::{
+    error::Error,
+    fmt::{self},
+    sync::Arc,
+};
+
+use crate::universe::StationID;
 // use tokio::sync::Mutex;
 // use crate::universe::{self, Item, Region, Station};
 // use crate::esi;
 
 
-// #[derive(Clone, PartialEq, Debug)]
-// pub enum MarketOrderRange {
-//     System(u32),
-//     Station,
-//     Region,
-// }
+#[derive(Clone, PartialEq, Debug)]
+pub enum MarketOrderRange {
+    System(u32),
+    Station,
+    Region,
+}
 
-// impl<'de> Deserialize<'de> for MarketOrderRange {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: serde::Deserializer<'de>,
-//     {
-//         struct MarketOrderRangeVisitor;
+impl<'de> Deserialize<'de> for MarketOrderRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct MarketOrderRangeVisitor;
 
-//         impl<'de> Visitor<'de> for MarketOrderRangeVisitor {
-//             type Value = MarketOrderRange;
+        impl<'de> Visitor<'de> for MarketOrderRangeVisitor {
+            type Value = MarketOrderRange;
 
-//             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-//                 formatter.write_str(r#""station", "region", or a number"#)
-//             }
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str(r#""station", "region", or a number"#)
+            }
 
-//             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-//             where
-//                 E: de::Error,
-//             {
-//                 match value {
-//                     "station" => Ok(MarketOrderRange::Station),
-//                     "region" => Ok(MarketOrderRange::Region),
-//                     "solarsystem" => Ok(MarketOrderRange::System(1)),
-//                     _ => {
-//                         let num_range: Result<u32, _> = value.parse();
-//                         match num_range {
-//                             Ok(val) => Ok(MarketOrderRange::System(val)),
-//                             Err(_) => Err(E::custom(format!("unexpected string: {}", value))),
-//                         }
-//                     }
-//                 }
-//             }
-//         }
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "station" => Ok(MarketOrderRange::Station),
+                    "region" => Ok(MarketOrderRange::Region),
+                    "solarsystem" => Ok(MarketOrderRange::System(1)),
+                    _ => {
+                        let num_range: Result<u32, _> = value.parse();
+                        match num_range {
+                            Ok(val) => Ok(MarketOrderRange::System(val)),
+                            Err(_) => Err(E::custom(format!("unexpected string: {}", value))),
+                        }
+                    }
+                }
+            }
+        }
 
-//         deserializer.deserialize_any(MarketOrderRangeVisitor)
-//     }
-// }
+        deserializer.deserialize_any(MarketOrderRangeVisitor)
+    }
+}
 
-// #[derive(Clone, Deserialize, PartialEq, Debug)]
-// pub struct MarketOrder {
-//     pub id: u64,
-//     // duration: u32, - this is not really relevant for any user, there is no reason to know when it expires over when it was issued
-//     pub is_buy_order: bool,
-//     pub issued: DateTime<Utc>,
-//     pub location: Station,
-//     pub min_volume: u32,
-//     pub range: MarketOrderRange,
-//     pub volume_remain: u32,
-//     pub volume_total: u32,
-// }
+#[derive(Clone, Deserialize, PartialEq, Debug)]
+pub struct MarketOrder {
+    pub id: u64,
+    // duration: u32, - this is not really relevant for any user, there is no reason to know when it expires over when it was issued
+    pub is_buy_order: bool,
+    pub issued: DateTime<Utc>,
+    pub location: StationID,
+    pub min_volume: u32,
+    pub range: MarketOrderRange,
+    pub volume_remain: u32,
+    pub volume_total: u32,
+}
 
 // impl MarketOrder {
 //     async fn from_api_response(value: MarketAPIResponseOrder) -> Result<Self, Box<dyn Error>> {
