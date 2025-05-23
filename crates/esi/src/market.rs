@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     ESIClient,
-    universe::{InvalidIDError, Item, RegionID, Regions, StationID, SystemID},
+    universe::{InvalidIDError, RegionID, StationID, SystemID},
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -121,7 +121,8 @@ impl TryFrom<MarketAPIResponseOrder> for Order {
         let issue_date = DateTime::parse_from_rfc3339(&value.issued)
             .map_err(OrderConversionError::ParseError)?
             .to_utc();
-        let location_id = StationID::try_from(value.location_id).map_err(OrderConversionError::InvalidIDError)?;
+        let location_id =
+            StationID::try_from(value.location_id).map_err(OrderConversionError::InvalidIDError)?;
 
         Ok(Order {
             id: value.order_id,

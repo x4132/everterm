@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use esi::{
-    ESIClient,
-    market::Market,
-    universe::{RegionID, Regions},
+    market::Market, universe::{RegionID, Regions}, ESIClient
 };
 
 #[tokio::main]
