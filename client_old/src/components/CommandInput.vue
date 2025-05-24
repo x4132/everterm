@@ -20,27 +20,24 @@ function handleShortcuts(evt: KeyboardEvent) {
             command.value = "";
         }
     }
+
+    return true;
 }
 </script>
 
 <template>
-    <div :class="cn('flex items-center relative', props.class)">
-        <!-- WHY DOES VUE NEED TYPE ASSERT -->
-        <Input
-            default-value="> "
-            class="rounded-none px-1 py-0 m-0 text-2xl uppercase select-none font-mono"
-            :value="'> ' + command"
-            @input="
-                (evt: InputEvent) =>
-                    (command = (evt.target as HTMLInputElement).value.substring(
-                        2,
-                    ))
-            "
-            @focus="() => (focused = true)"
-            @blur="() => (focused = false)"
-            @keydown="handleShortcuts"
-            v
-        />
+    <div :class="cn('flex items-center relative focus-visible:border-ring focus-visible: ring-ring/50 focus-visible:ring-[3px]', props.class)">
+        <span class="w-full flex text-2xl items-center bg-input">
+            <span>&gt;&nbsp;</span>
+            <Input
+                default-value=""
+                class="rounded-none px-1 py-0 m-0 text-2xl uppercase font-mono focus-visible:border-none focus-visible:ring-0"
+                v-model="command"
+                @focus="() => (focused = true)"
+                @blur="() => (focused = false)"
+                @keydown="handleShortcuts"
+            />
+        </span>
 
         <div
             :class="`absolute top-full border w-[640px] flex flex-col ${focused ? 'block' : 'hidden'}`"

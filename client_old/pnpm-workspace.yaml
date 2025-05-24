@@ -1,0 +1,7 @@
+onlyBuiltDependencies:
+  - '@tailwindcss/oxide'
+  - optipng-bin
+  - pngquant-bin
+  - sharp
+  - tauri
+  - zopflipng-bin
