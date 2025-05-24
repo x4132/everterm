@@ -26,6 +26,7 @@
 DerivedData/
 Packages
 xcuserdata/
+http-cacache
 
 # Don't commit any secrets to the repo.
 .env

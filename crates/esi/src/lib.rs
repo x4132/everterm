@@ -21,7 +21,7 @@ pub struct ESIClient {
 }
 
 impl ESIClient {
-    pub fn new(component_name: &str, platform_name: &str) -> Self {
+    pub fn new(component_name: &str, platform_name: &str, max_sem: usize) -> Self {
         ESIClient {
             errors: Arc::new(Mutex::new(100)),
             error_timeout: Arc::new(Mutex::new(0)),
@@ -33,7 +33,7 @@ impl ESIClient {
                     .unwrap(),
             )
             .with(Cache(HttpCache {
-                mode: CacheMode::ForceCache,
+                mode: CacheMode::Default,
                 manager: CACacheManager::default(),
                 options: HttpCacheOptions::default(),
             }))
@@ -42,7 +42,7 @@ impl ESIClient {
             platform_name: String::from(platform_name),
             // TODO: bump this up on prod when i jack up the ulimit (fd limit)
             // also make this function jack up the ulimit for this app
-            connect_pool: Arc::new(Semaphore::new(32)),
+            connect_pool: Arc::new(Semaphore::new(max_sem)),
         }
     }
 
@@ -103,7 +103,6 @@ impl ESIClient {
             .unwrap();
 
         drop(permit);
-        println!("Returned semaphore");
 
         // unify status errors into MiddlewareError via .into()
         match result.status().as_u16() {

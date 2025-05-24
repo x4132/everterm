@@ -3,25 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self};
 use std::ops::Range;
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
 
 use crate::ESIClient;
-
-/// Gets the cache file path for a given cache file name
-fn get_cache_path(filename: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let cache_dir = dirs::cache_dir().ok_or("Could not determine cache directory")?;
-
-    let app_cache_dir = cache_dir.join("everterm").join("esi");
-
-    // Create cache directory if it doesn't exist
-    std::fs::create_dir_all(&app_cache_dir)?;
-
-    Ok(app_cache_dir.join(filename))
-}
 
 /// This struct represents a geospatial point in the EvE universe.
 /// i have no idea what that means
@@ -110,120 +94,22 @@ type RegionResult = Result<Region, Box<dyn Error>>;
 
 #[derive(Clone, Debug)]
 pub struct Regions {
-    pub map: DashMap<RegionID, Region>,
+    pub map: Arc<DashMap<RegionID, Region>>,
     client: Arc<ESIClient>,
-    last_fetch_time: Arc<Mutex<Option<Instant>>>,
-    save_pending: Arc<Mutex<bool>>,
 }
 
 impl Regions {
     pub fn new(client: Arc<ESIClient>) -> Self {
         Regions {
-            map: DashMap::new(),
+            map: Arc::new(DashMap::new()),
             client,
-            last_fetch_time: Arc::new(Mutex::new(None)),
-            save_pending: Arc::new(Mutex::new(false)),
         }
-    }
-
-    /// Loads regions from file-based cache
-    pub async fn load_from_cache(
-        client: Arc<ESIClient>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cache_path = get_cache_path("regions.json")?;
-
-        // Check if cache file exists
-        if !cache_path.exists() {
-            return Err("Cache file does not exist".into());
-        }
-
-        // Read and parse the cache file
-        let contents = tokio::fs::read_to_string(&cache_path).await?;
-        let regions_vec: Vec<Region> = serde_json::from_str(&contents)?;
-
-        // Convert Vec<Region> to DashMap<RegionID, Region>
-        let map = DashMap::new();
-        for region in regions_vec {
-            map.insert(region.id, region);
-        }
-
-        Ok(Regions {
-            map,
-            client,
-            last_fetch_time: Arc::new(Mutex::new(None)),
-            save_pending: Arc::new(Mutex::new(false)),
-        })
-    }
-
-    /// Saves regions to file-based cache
-    pub async fn save_to_cache(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let cache_path = get_cache_path("regions.json")?;
-
-        // Convert DashMap to Vec for serialization
-        let regions_vec: Vec<Region> = self.map.iter().map(|entry| entry.value().clone()).collect();
-
-        // Serialize and write to file
-        let contents = serde_json::to_string_pretty(&regions_vec)?;
-        tokio::fs::write(&cache_path, contents).await?;
-
-        Ok(())
-    }
-
-    /// Trigger a debounced save operation
-    fn trigger_debounced_save(&self) {
-        println!("Saving...");
-        const DEBOUNCE_DURATION: Duration = Duration::from_secs(5);
-
-        // Clone self for task
-        let regions = self.clone();
-        tokio::spawn(async move {
-            // Initialize debounce if not already pending
-            let schedule_save = {
-                let mut last = regions.last_fetch_time.lock().await;
-                *last = Some(Instant::now());
-                let mut pending = regions.save_pending.lock().await;
-                if *pending {
-                    false
-                } else {
-                    *pending = true;
-                    true
-                }
-            };
-            if !schedule_save {
-                return;
-            }
-            // Wait until DEBOUNCE_DURATION has passed since last fetch
-            loop {
-                let last_time = *regions.last_fetch_time.lock().await;
-                if let Some(t) = last_time {
-                    let since = Instant::now().duration_since(t);
-                    if since < DEBOUNCE_DURATION {
-                        tokio::time::sleep(DEBOUNCE_DURATION - since).await;
-                        continue;
-                    }
-                }
-                break;
-            }
-            // Perform save and reset pending
-            if let Err(e) = regions.save_to_cache().await {
-                eprintln!("Failed to save regions cache: {}", e);
-            }
-            // Reset pending flag and clear last fetch timestamp
-            {
-                let mut pending = regions.save_pending.lock().await;
-                *pending = false;
-            }
-            {
-                let mut last = regions.last_fetch_time.lock().await;
-                *last = None;
-            }
-        });
     }
 
     /// Fetches all regions in the universe and returns a Regions object with all regions
     pub async fn get_all(client: Arc<ESIClient>) -> Result<Self, Box<dyn std::error::Error>> {
         let regions = Regions::new(client);
-        // WHY - is this really necessary
+
         let ids: Vec<RegionID> = regions
             .client
             .esi_get("/universe/regions/")
@@ -251,9 +137,7 @@ impl Regions {
             .await
             .expect("Error in one of the spawned tasks");
 
-        let mut regions = Arc::try_unwrap(regions).expect("Arc still has multiple strong counts");
-
-        regions.map = Arc::try_unwrap(regions_map).expect("Arc still has multiple strong counts");
+        let regions = Arc::try_unwrap(regions).expect("Arc still has multiple strong counts");
 
         Ok(regions)
     }
@@ -287,18 +171,13 @@ impl Regions {
 
         self.map.insert(id, region.clone());
 
-        // Trigger debounced save for the new region (runs independently)
-        self.trigger_debounced_save();
-
         Ok(region)
     }
 
     pub fn from_map(map: DashMap<RegionID, Region>, client: Arc<ESIClient>) -> Self {
         Regions {
-            map,
+            map: Arc::new(map),
             client,
-            last_fetch_time: Arc::new(Mutex::new(None)),
-            save_pending: Arc::new(Mutex::new(false)),
         }
     }
 }
