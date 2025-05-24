@@ -140,7 +140,7 @@ code {
     html,
     body,
     #app {
-        @apply bg-background text-foreground w-full h-full;
+        @apply bg-background text-foreground w-full h-full text-lg;
     }
 }
 
