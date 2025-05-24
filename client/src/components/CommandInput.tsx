@@ -22,27 +22,30 @@ export default function CommandInput() {
   const handleFocus = useCallback(() => setFocused(true), []);
   const handleBlur = useCallback(() => setFocused(false), []);
 
-  const handleShortcuts = useCallback((evt: React.KeyboardEvent<HTMLDivElement>) => {
-    switch (evt.code) {
-      case "Escape":
-        if (command === "") {
-          blurInput();
-        } else {
-          setCommand("");
-        }
-        break;
-    }
-  }, [command, focusInput, blurInput]);
+  const handleShortcuts = useCallback(
+    (evt: React.KeyboardEvent<HTMLDivElement>) => {
+      switch (evt.code) {
+        case "Escape":
+          if (command === "") {
+            blurInput();
+          } else {
+            setCommand("");
+          }
+          break;
+      }
+    },
+    [command, focusInput, blurInput],
+  );
 
   return (
     <div className="flex grow items-center relative">
       <div
-        className="w-full flex text-2xl items-center bg-input focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+        className="w-full flex text-2xl items-center bg-input focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] font-code"
         onKeyDown={handleShortcuts}
       >
         <ChevronRight className="cursor-text" onClick={focusInput} />
         <Input
-          className="rounded-none px-1 py-0 m-0 text-2xl uppercase font-mono focus-visible:border-none focus-visible:ring-0"
+          className="rounded-none px-1 py-0 m-0 text-2xl uppercase focus-visible:border-none focus-visible:ring-0"
           onChange={(evt) => setCommand(evt.target.value)}
           value={command}
           onFocus={handleFocus}
@@ -51,7 +54,9 @@ export default function CommandInput() {
         />
       </div>
 
-      <div className={`absolute top-full border w-[640px] flex flex-col ${focused ? "block" : "hidden"}`}>
+      <div
+        className={`absolute top-full border w-[640px] flex flex-col z-10 bg-background p-2 ${focused ? "block" : "hidden"}`}
+      >
         <div>Blank Input</div>
       </div>
     </div>
