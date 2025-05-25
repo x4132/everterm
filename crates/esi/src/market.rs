@@ -78,7 +78,7 @@ struct MarketAPIResponseOrder {
     volume_total: u32,
 }
 
-#[derive(Clone, Deserialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct Order {
     pub id: u64,
     pub is_buy_order: bool,
@@ -91,6 +91,12 @@ pub struct Order {
     pub range: MarketOrderRange,
     pub volume_remain: u32,
     pub volume_total: u32,
+}
+
+impl PartialEq for Order {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl Eq for Order {}
@@ -153,6 +159,19 @@ impl OrderBook {
             orders: BTreeSet::new(),
         }
     }
+
+    pub fn merge(&mut self, other: Self) -> Result<(), InvalidIDError> {
+        if self.item != other.item {
+            return Err(InvalidIDError {
+                value: other.item.into(),
+                acceptable: self.item.into()..self.item.into(),
+            });
+        }
+
+        self.orders.extend(other.orders);
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -164,21 +183,71 @@ pub struct Market {
 
 impl Market {
     /// loads the market orders of a region.
-    // pub async fn fetch_regions(regions: Vec<RegionID>, client: ESIClient) -> Result<Self, Box<dyn std::error::Error>> {
-    //     let market = Market {
-    //         items: DashMap::new(),
-    //         time: DateTime::UNIX_EPOCH
-    //     };
+    pub async fn fetch_regions(
+        regions: Vec<RegionID>,
+        client: Arc<ESIClient>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        println!(
+            "Markets: Starting region orderbook fetching at {}",
+            chrono::Utc::now()
+        );
+        let mut market = Market {
+            items: DashMap::new(),
+            last_modified: DateTime::UNIX_EPOCH,
+            expires: DateTime::UNIX_EPOCH,
+        };
 
-    //     for region in regions {
+        let markets = Arc::new(Mutex::new(Vec::new()));
+        let mut handles = Vec::new();
+        for region in regions {
+            let markets = markets.clone();
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let market = Self::fetch_region(region, client).await.unwrap();
+                markets.lock().await.push(market);
+            });
 
-    //     }
-    // }
+            handles.push(handle);
+        }
+
+        futures::future::try_join_all(handles).await?;
+
+        let markets = Arc::try_unwrap(markets)
+            .expect("Arc still has multiple strong counts")
+            .into_inner();
+        println!(
+            "Markets: Finished fetching orderbooks at {}",
+            chrono::Utc::now()
+        );
+
+        for region in markets {
+            if market.last_modified == DateTime::UNIX_EPOCH {
+                market.last_modified = region.last_modified;
+                market.expires = region.expires;
+            }
+
+            for item in region.items {
+                if !market.items.contains_key(&item.0) {
+                    market.items.insert(item.0, OrderBook::new(item.0));
+                }
+
+                market
+                    .items
+                    .get_mut(&item.0)
+                    .unwrap()
+                    .merge(item.1)
+                    .unwrap();
+            }
+        }
+
+        return Ok(market);
+    }
 
     pub async fn fetch_region(
         region: RegionID,
         client: Arc<ESIClient>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        println!("Markets: Fetching Orderbook for region {}", region.get());
         let first_page = client
             .esi_get(&format!("/markets/{}/orders/", region.get()))
             .await?;
@@ -248,11 +317,20 @@ impl Market {
             }
 
             let type_id = order_response.type_id;
-            if let Ok(order) = Order::try_from(order_response) {
-                market.items.get_mut(&type_id).unwrap().orders.insert(order);
+            match Order::try_from(order_response) {
+                Ok(order) => {
+                    market.items.get_mut(&type_id).unwrap().orders.insert(order);
+                },
+                Err(err) => {
+                    eprintln!("{:?}", err);
+                }
             }
         }
 
+        println!(
+            "Markets: Finished fetching orderbook for region {}",
+            region.get()
+        );
         Ok(market)
     }
 }

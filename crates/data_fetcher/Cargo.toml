@@ -8,3 +8,4 @@ tokio.workspace = true
 reqwest.workspace = true
 esi.workspace = true
 rlimit.workspace = true
+chrono.workspace = true

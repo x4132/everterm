@@ -23,8 +23,8 @@ impl Point {
 
 #[derive(Debug)]
 pub struct InvalidIDError {
-    value: u64,
-    acceptable: Range<u64>,
+    pub value: u64,
+    pub acceptable: Range<u64>,
 }
 
 impl fmt::Display for InvalidIDError {
@@ -393,6 +393,7 @@ impl TryFrom<u64> for StationID {
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value {
             60_000_000..64_000_000 => Ok(StationID { value }),
+            1_000_000_000_000..1_100_000_000_000 => Ok(StationID { value }),
             _ => Err(InvalidIDError {
                 value,
                 acceptable: 60_000_000..64_000_000,

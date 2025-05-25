@@ -1,7 +1,9 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use esi::{
-    market::Market, universe::{RegionID, Regions}, ESIClient
+    ESIClient,
+    market::Market,
+    universe::{RegionID, Regions},
 };
 
 #[tokio::main]
@@ -10,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     {
         rlimit::setrlimit(rlimit::Resource::NOFILE, 1024, 2048).unwrap();
-        max_fds = 128;
+        max_fds = 32;
     }
 
     #[cfg(windows)]
@@ -23,15 +25,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         panic!("Unsupported OS!");
     }
 
-    let client = Arc::new(ESIClient::new("market_data_fetcher", std::env::consts::OS, max_fds));
+    let client = Arc::new(ESIClient::new(
+        "market_data_fetcher",
+        std::env::consts::OS,
+        max_fds,
+    ));
     let regions = Regions::get_all(client.clone()).await.unwrap();
-    let forge_orders = Market::fetch_region(RegionID::try_from(10000002).unwrap(), client.clone())
-        .await
-        .unwrap();
 
-    // need to run a job every 5 minutes to grab new order data
-    println!("regions: {:?}", regions.map.len());
-    println!("orders: {:?}", forge_orders.items.len());
+    let mut orders;
 
-    Ok(())
+    loop {
+        orders = fetch_all_orders(&regions, client.clone()).await;
+
+        // TODO: push order map into redis or something
+
+        tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+    }
+}
+
+async fn fetch_all_orders(regions: &Regions, client: Arc<ESIClient>) -> Market {
+    Market::fetch_regions(
+        regions.map.iter().map(|i| i.key().to_owned()).collect(),
+        client,
+    )
+    .await
+    .unwrap()
 }

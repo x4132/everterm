@@ -70,10 +70,11 @@ impl ESIClient {
         // TODO: Evaluate if this is really necessary?
         // NOTE: Do i need another permit?
         if result.is_err() {
-            eprintln!(
+            println!(
                 "ESI Client: Needed to resend request! {:?}",
                 result.as_ref().err().unwrap()
             );
+            *self.errors.lock().await -= 1;
             // retry and convert reqwest::Error into our MiddlewareError
             result = req.send().await.map_err(|e| e.into());
         }
@@ -84,31 +85,43 @@ impl ESIClient {
 
         let result = result.unwrap();
 
-        // TODO: maybe add better error handling here, but this is probably fine??
-        (*self.errors.lock().await) = result
-            .headers()
-            .get("x-esi-error-limit-remain")
-            .expect("No ESI Error limit found???")
-            .to_str()
-            .unwrap()
-            .parse()
-            .unwrap();
-        (*self.error_timeout.lock().await) = result
-            .headers()
-            .get("x-esi-error-limit-reset")
-            .expect("No ESI Reset Timer found???")
-            .to_str()
-            .unwrap()
-            .parse()
-            .unwrap();
-
         drop(permit);
 
         // unify status errors into MiddlewareError via .into()
         match result.status().as_u16() {
-            200 => Ok(result),
-            400..=599 => {
+            200 => {
+                Ok(result)
+            },
+            420 => {
+                self.await_esi_timeout().await;
+
+                Err(result.error_for_status().unwrap_err().into())
+            },
+            400..=499 => {
+                (*self.errors.lock().await) = result
+                    .headers()
+                    .get("x-esi-error-limit-remain")
+                    .expect("No ESI Error limit found???")
+                    .to_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                (*self.error_timeout.lock().await) = result
+                    .headers()
+                    .get("x-esi-error-limit-reset")
+                    .expect("No ESI Reset Timer found???")
+                    .to_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+
                 let err = result.error_for_status().unwrap_err();
+
+                Err(err.into())
+            }
+            500..=599 => {
+                let err = result.error_for_status().unwrap_err();
+
                 Err(err.into())
             }
             _ => {
