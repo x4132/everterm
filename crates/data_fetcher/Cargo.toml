@@ -9,3 +9,4 @@ reqwest.workspace = true
 esi.workspace = true
 rlimit.workspace = true
 chrono.workspace = true
+dashmap.workspace = true

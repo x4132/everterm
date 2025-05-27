@@ -14,4 +14,4 @@ dashmap.workspace = true
 http-cache-reqwest.workspace = true
 reqwest-middleware.workspace = true
 bitcode.workspace = true
-dirs = "5.0"
+anyhow.workspace = true

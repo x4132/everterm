@@ -7,7 +7,7 @@ use serde::{
 };
 use std::{
     cmp::Ordering,
-    collections::BTreeSet,
+    collections::HashMap,
     fmt::{self},
     sync::Arc,
 };
@@ -62,6 +62,23 @@ impl<'de> Deserialize<'de> for MarketOrderRange {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MarketDiff {
+    pub new: HashMap<u32, Vec<Order>>,
+    pub modified: HashMap<u32, Vec<Order>>,
+    pub removed: HashMap<u32, Vec<u64>>,
+}
+
+impl MarketDiff {
+    pub fn new() -> Self {
+        MarketDiff {
+            new: HashMap::new(),
+            modified: HashMap::new(),
+            removed: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct MarketAPIResponseOrder {
     duration: u32,
@@ -78,7 +95,7 @@ struct MarketAPIResponseOrder {
     volume_total: u32,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug, PartialEq)]
 pub struct Order {
     pub id: u64,
     pub is_buy_order: bool,
@@ -91,12 +108,6 @@ pub struct Order {
     pub range: MarketOrderRange,
     pub volume_remain: u32,
     pub volume_total: u32,
-}
-
-impl PartialEq for Order {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
 }
 
 impl Eq for Order {}
@@ -150,13 +161,13 @@ impl TryFrom<MarketAPIResponseOrder> for Order {
 #[derive(Clone, Debug)]
 pub struct OrderBook {
     pub item: u32,
-    pub orders: BTreeSet<Order>,
+    pub orders: HashMap<u64, Order>,
 }
 impl OrderBook {
     pub fn new(item: u32) -> Self {
         OrderBook {
             item,
-            orders: BTreeSet::new(),
+            orders: HashMap::new(),
         }
     }
 
@@ -182,20 +193,24 @@ pub struct Market {
 }
 
 impl Market {
+    pub fn new() -> Self {
+        Market {
+            items: DashMap::new(),
+            last_modified: DateTime::UNIX_EPOCH,
+            expires: DateTime::UNIX_EPOCH,
+        }
+    }
+
     /// loads the market orders of a region.
     pub async fn fetch_regions(
         regions: Vec<RegionID>,
         client: Arc<ESIClient>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<Self> {
         println!(
             "Markets: Starting region orderbook fetching at {}",
             chrono::Utc::now()
         );
-        let mut market = Market {
-            items: DashMap::new(),
-            last_modified: DateTime::UNIX_EPOCH,
-            expires: DateTime::UNIX_EPOCH,
-        };
+        let mut market = Market::new();
 
         let markets = Arc::new(Mutex::new(Vec::new()));
         let mut handles = Vec::new();
@@ -243,10 +258,7 @@ impl Market {
         return Ok(market);
     }
 
-    pub async fn fetch_region(
-        region: RegionID,
-        client: Arc<ESIClient>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn fetch_region(region: RegionID, client: Arc<ESIClient>) -> anyhow::Result<Self> {
         println!("Markets: Fetching Orderbook for region {}", region.get());
         let first_page = client
             .esi_get(&format!("/markets/{}/orders/", region.get()))
@@ -319,8 +331,14 @@ impl Market {
             let type_id = order_response.type_id;
             match Order::try_from(order_response) {
                 Ok(order) => {
-                    market.items.get_mut(&type_id).unwrap().orders.insert(order);
-                },
+                    let order_id = order.id;
+                    market
+                        .items
+                        .get_mut(&type_id)
+                        .unwrap()
+                        .orders
+                        .insert(order_id, order);
+                }
                 Err(err) => {
                     eprintln!("{:?}", err);
                 }
@@ -332,5 +350,60 @@ impl Market {
             region.get()
         );
         Ok(market)
+    }
+
+    /// This function compares two markets and returns the diff between the two.
+    pub fn delta(&self, other: Self) -> MarketDiff {
+        let mut diff = MarketDiff::new();
+        // go through existing items and find updates
+        for item in self.items.iter() {
+            match other.items.remove(item.key()) {
+                Some(other) => {
+                    let mut other = other.1.orders;
+
+                    diff.modified.insert(item.item, Vec::new());
+                    diff.removed.insert(item.item, Vec::new());
+
+                    for order in item.orders.iter() {
+                        match other.remove(order.0) {
+                            Some(other) => {
+                                if other != *order.1 {
+                                    // check if they are the same or modified
+                                    diff.modified.get_mut(item.key()).unwrap().push(other);
+                                }
+                            }
+                            None => {
+                                // the order was cancelled/filled/removed in some way
+                                diff.removed.get_mut(item.key()).unwrap().push(order.1.id);
+                            }
+                        }
+                    }
+
+                    for new_order in other {
+                        if !diff.new.contains_key(item.key()) {
+                            diff.new.insert(item.item, Vec::new());
+                        }
+
+                        diff.new.get_mut(item.key()).unwrap().push(new_order.1);
+                    }
+                }
+
+                None => {
+                    // this item category is GONE
+                    diff.removed.insert(item.item, Vec::new());
+                    let item_vec = diff.removed.get_mut(item.key()).unwrap();
+                    for removed_order in item.orders.iter() {
+                        item_vec.push(removed_order.1.id);
+                    }
+                }
+            }
+        }
+
+        // remaining IDs are new items
+        for item in other.items.iter() {
+            diff.new.insert(item.item, item.orders.iter().map(|order| order.1.to_owned()).collect());
+        }
+
+        return diff;
     }
 }

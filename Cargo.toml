@@ -30,3 +30,4 @@ reqwest-middleware = "0.4"
 bitcode = { version = "0.6", features = ["serde"] }
 rlimit = "0.10"
 axum = { version = "0.8" }
+anyhow = "1"

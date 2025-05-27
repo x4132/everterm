@@ -1,29 +1,16 @@
 use std::sync::Arc;
 
+use data_fetcher::init_io;
 use esi::{
     ESIClient,
     market::Market,
-    universe::{RegionID, Regions},
+    universe::{Regions},
 };
+use tokio::sync::{Mutex, mpsc};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let max_fds: usize;
-    #[cfg(unix)]
-    {
-        rlimit::setrlimit(rlimit::Resource::NOFILE, 1024, 2048).unwrap();
-        max_fds = 32;
-    }
-
-    #[cfg(windows)]
-    {
-        rlimit::setmaxstdio(2048).unwrap();
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        panic!("Unsupported OS!");
-    }
+    let max_fds: usize = init_io();
 
     let client = Arc::new(ESIClient::new(
         "market_data_fetcher",
@@ -32,22 +19,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let regions = Regions::get_all(client.clone()).await.unwrap();
 
-    let mut orders;
+    // set up orderbook fetching
+    let book = Arc::new(Mutex::new(Market::new()));
+    {
+        let (tx, rx) = mpsc::channel(4);
+        for region in regions.map.clone().iter() {
+            tokio::spawn(data_fetcher::refresh_region_data(
+                region.id,
+                client.clone(),
+                tx.clone(),
+            ));
+        }
 
-    loop {
-        orders = fetch_all_orders(&regions, client.clone()).await;
-
-        // TODO: push order map into redis or something
-
-        tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+        // orderbook reassembler
+        tokio::spawn(data_fetcher::update_market_data(book.clone(), rx));
     }
-}
 
-async fn fetch_all_orders(regions: &Regions, client: Arc<ESIClient>) -> Market {
-    Market::fetch_regions(
-        regions.map.iter().map(|i| i.key().to_owned()).collect(),
-        client,
-    )
-    .await
-    .unwrap()
+    return Ok(());
 }
