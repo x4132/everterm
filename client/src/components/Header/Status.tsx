@@ -10,16 +10,30 @@ export default function Status() {
     },
   });
 
-  const union_status = esi_status.status;
+  const backend_status = useQuery({
+    queryKey: ["api-ping"],
+    queryFn: async () => {
+      return await ky.get("/api/ping");
+    }
+  });
+
+  const union_status = [esi_status.status, backend_status.status].reduce((prev, cur) => {
+    if (prev === "error" || cur === "error") return "error";
+    if (prev === "pending" || cur === "pending") return "pending";
+    return "success";
+  }, "success");
 
   return (
-    <div className="relative group text-sm font-mono">
-      <div className="flex items-center px-2 cursor-pointer">
+    <div className="relative group text-sm font-mono cursor-default">
+      <div className="flex items-center px-2">
         <Clock />
         <StatusDot status={union_status} />
       </div>
 
-      <div className="absolute w-full top-full px-2 pt-1 hidden cursor-default group-hover:flex flex-col border-t border-white">
+      <div className="absolute w-full top-full px-2 pt-1 hidden group-hover:flex flex-col border-t border-white">
+        <div className="flex items-center">
+          Connection: <StatusDot status={backend_status.status} />{" "}
+        </div>
         <div className="flex items-center">
           ESI Status: <StatusDot status={esi_status.status} />{" "}
         </div>
