@@ -40,8 +40,6 @@ impl ESIClient {
             .build(), // cursed
             component_name: String::from(component_name),
             platform_name: String::from(platform_name),
-            // TODO: bump this up on prod when i jack up the ulimit (fd limit)
-            // also make this function jack up the ulimit for this app
             connect_pool: Arc::new(Semaphore::new(max_sem)),
         }
     }
@@ -89,14 +87,12 @@ impl ESIClient {
 
         // unify status errors into MiddlewareError via .into()
         match result.status().as_u16() {
-            200 => {
-                Ok(result)
-            },
+            200 => Ok(result),
             420 => {
                 self.await_esi_timeout().await;
 
                 Err(result.error_for_status().unwrap_err().into())
-            },
+            }
             400..=499 => {
                 (*self.errors.lock().await) = result
                     .headers()

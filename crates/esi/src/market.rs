@@ -14,8 +14,7 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    ESIClient,
-    universe::{InvalidIDError, RegionID, StationID, SystemID},
+    universe::{InvalidIDError, Region, StationID, SystemID}, ESIClient
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -203,7 +202,7 @@ impl Market {
 
     /// loads the market orders of a region.
     pub async fn fetch_regions(
-        regions: Vec<RegionID>,
+        regions: Vec<Region>,
         client: Arc<ESIClient>,
     ) -> anyhow::Result<Self> {
         println!(
@@ -218,7 +217,7 @@ impl Market {
             let markets = markets.clone();
             let client = client.clone();
             let handle = tokio::spawn(async move {
-                let market = Self::fetch_region(region, client).await.unwrap();
+                let market = Self::fetch_region(&region, client).await.unwrap();
                 markets.lock().await.push(market);
             });
 
@@ -258,10 +257,10 @@ impl Market {
         return Ok(market);
     }
 
-    pub async fn fetch_region(region: RegionID, client: Arc<ESIClient>) -> anyhow::Result<Self> {
-        println!("Markets: Fetching Orderbook for region {}", region.get());
+    pub async fn fetch_region(region: &Region, client: Arc<ESIClient>) -> anyhow::Result<Self> {
+        println!("Markets: Fetching Orderbook for {}", region.name);
         let first_page = client
-            .esi_get(&format!("/markets/{}/orders/", region.get()))
+            .esi_get(&format!("/markets/{}/orders/", region.id.get()))
             .await?;
         let first_page_headers = first_page.headers();
         let num_pages: usize = first_page_headers
@@ -294,9 +293,10 @@ impl Market {
         for page in 2..=num_pages {
             let pages = orders.clone();
             let client = client.clone();
+            let region_id = region.id.get();
             let handle = tokio::spawn(async move {
                 let page = client
-                    .esi_get(&format!("/markets/{}/orders/?page={}", region.get(), page))
+                    .esi_get(&format!("/markets/{}/orders/?page={}", region_id, page))
                     .await
                     .expect("Failed to load page")
                     .json::<Vec<MarketAPIResponseOrder>>()
@@ -347,63 +347,217 @@ impl Market {
 
         println!(
             "Markets: Finished fetching orderbook for region {}",
-            region.get()
+            region.name
         );
         Ok(market)
     }
 
     /// This function compares two markets and returns the diff between the two.
-    pub fn delta(&self, other: Self) -> MarketDiff {
+    pub fn delta(&self, new_market: &Self) -> MarketDiff {
         let mut diff = MarketDiff::new();
+
         // go through existing items and find updates
-        for item in self.items.iter() {
-            match other.items.remove(item.key()) {
-                Some(other) => {
-                    let mut other = other.1.orders;
+        for old_item in self.items.iter() {
+            match new_market.items.get(old_item.key()) {
+                Some(new_orderbook) => {
+                    let new_ordermap = &new_orderbook.orders;
 
-                    diff.modified.insert(item.item, Vec::new());
-                    diff.removed.insert(item.item, Vec::new());
+                    diff.modified.insert(old_item.item, Vec::new());
+                    diff.removed.insert(old_item.item, Vec::new());
 
-                    for order in item.orders.iter() {
-                        match other.remove(order.0) {
-                            Some(other) => {
-                                if other != *order.1 {
-                                    // check if they are the same or modified
-                                    diff.modified.get_mut(item.key()).unwrap().push(other);
+                    // Check for modified/unchanged orders and removed orders
+                    for old_order in old_item.orders.iter() {
+                        match new_ordermap.get(old_order.0) {
+                            Some(other_order) => {
+                                if other_order != old_order.1 {
+                                    // Order was modified
+                                    diff.modified
+                                        .get_mut(old_item.key())
+                                        .unwrap()
+                                        .push(other_order.clone());
                                 }
+                                // If they're equal, the order is unchanged (no action needed)
                             }
                             None => {
-                                // the order was cancelled/filled/removed in some way
-                                diff.removed.get_mut(item.key()).unwrap().push(order.1.id);
+                                // The order was cancelled/filled/removed in some way
+                                diff.removed.get_mut(old_item.key()).unwrap().push(old_order.1.id);
                             }
                         }
                     }
 
-                    for new_order in other {
-                        if !diff.new.contains_key(item.key()) {
-                            diff.new.insert(item.item, Vec::new());
+                    // Check for new orders in the other market
+                    for other_order in new_ordermap.iter() {
+                        if !old_item.orders.contains_key(other_order.0) {
+                            // This is a new order
+                            if !diff.new.contains_key(old_item.key()) {
+                                diff.new.insert(old_item.item, Vec::new());
+                            }
+                            diff.new
+                                .get_mut(old_item.key())
+                                .unwrap()
+                                .push(other_order.1.clone());
                         }
-
-                        diff.new.get_mut(item.key()).unwrap().push(new_order.1);
                     }
                 }
 
                 None => {
-                    // this item category is GONE
-                    diff.removed.insert(item.item, Vec::new());
-                    let item_vec = diff.removed.get_mut(item.key()).unwrap();
-                    for removed_order in item.orders.iter() {
+                    // This item category is GONE in the new market
+                    diff.removed.insert(old_item.item, Vec::new());
+                    let item_vec = diff.removed.get_mut(old_item.key()).unwrap();
+                    for removed_order in old_item.orders.iter() {
                         item_vec.push(removed_order.1.id);
                     }
                 }
             }
         }
 
-        // remaining IDs are new items
-        for item in other.items.iter() {
-            diff.new.insert(item.item, item.orders.iter().map(|order| order.1.to_owned()).collect());
+        // Find completely new item categories
+        for item in new_market.items.iter() {
+            if !self.items.contains_key(item.key()) {
+                diff.new.insert(
+                    item.item,
+                    item.orders.iter().map(|order| order.1.clone()).collect(),
+                );
+            }
         }
 
         return diff;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::universe::{StationID, SystemID};
+    use chrono::{Duration, TimeZone, Utc};
+
+    fn make_order(id: u64, price: f64) -> Order {
+        let issued = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+        let expiry = issued + Duration::days(1);
+        let location_id = StationID::try_from(60_000_001).unwrap();
+        let system_id = SystemID::try_from(30_000_001).unwrap();
+        Order {
+            id,
+            is_buy_order: false,
+            price,
+            issued,
+            expiry,
+            location_id,
+            system_id,
+            min_volume: 1,
+            range: MarketOrderRange::Region,
+            volume_remain: 1,
+            volume_total: 1,
+        }
+    }
+
+    #[test]
+    fn test_delta_empty() {
+        let m1 = Market::new();
+        let m2 = Market::new();
+        let diff = m1.delta(&m2);
+        assert!(diff.new.is_empty());
+        assert!(diff.modified.is_empty());
+        assert!(diff.removed.is_empty());
+    }
+
+    #[test]
+    fn test_delta_removed() {
+        let m1 = Market::new();
+        let mut book = OrderBook::new(100);
+        let o = make_order(1, 10.0);
+        book.orders.insert(o.id, o.clone());
+        m1.items.insert(100, book);
+        let m2 = Market::new();
+        let diff = m1.delta(&m2);
+        assert_eq!(diff.removed.get(&100).unwrap(), &vec![1]);
+        assert!(diff.new.get(&100).is_none());
+        assert!(diff.modified.get(&100).is_none());
+    }
+
+    #[test]
+    fn test_delta_new() {
+        let m1 = Market::new();
+        let m2 = Market::new();
+        let mut book = OrderBook::new(200);
+        let o = make_order(2, 20.0);
+        book.orders.insert(o.id, o.clone());
+        m2.items.insert(200, book);
+        let diff = m1.delta(&m2);
+        assert_eq!(diff.new.get(&200).unwrap(), &vec![o]);
+        assert!(diff.modified.get(&200).is_none());
+        assert!(diff.removed.get(&200).is_none());
+    }
+
+    #[test]
+    fn test_delta_modified() {
+        let m1 = Market::new();
+        let m2 = Market::new();
+        let mut b1 = OrderBook::new(300);
+        let o1 = make_order(3, 30.0);
+        b1.orders.insert(o1.id, o1.clone());
+        m1.items.insert(300, b1);
+        let mut b2 = OrderBook::new(300);
+        let o2 = make_order(3, 35.0);
+        b2.orders.insert(o2.id, o2.clone());
+        m2.items.insert(300, b2);
+        let diff = m1.delta(&m2);
+        assert!(diff.new.get(&300).is_none());
+        assert!(diff.removed.get(&300).unwrap().is_empty());
+        assert_eq!(diff.modified.get(&300).unwrap(), &vec![o2]);
+    }
+
+    #[test]
+    fn test_delta_mixed_operations() {
+        let m1 = Market::new();
+        let m2 = Market::new();
+
+        // Add an item with multiple orders to m1
+        let mut b1 = OrderBook::new(100);
+        let o1 = make_order(1, 10.0);
+        let o2 = make_order(2, 20.0);
+        b1.orders.insert(o1.id, o1.clone());
+        b1.orders.insert(o2.id, o2.clone());
+        m1.items.insert(100, b1);
+
+        // Add same item to m2 with one modified order, one unchanged, and one new
+        let mut b2 = OrderBook::new(100);
+        let o1_unchanged = o1.clone(); // same order
+        let o2_modified = make_order(2, 25.0); // modified price
+        let o3_new = make_order(3, 30.0); // new order
+        b2.orders.insert(o1_unchanged.id, o1_unchanged);
+        b2.orders.insert(o2_modified.id, o2_modified.clone());
+        b2.orders.insert(o3_new.id, o3_new.clone());
+        m2.items.insert(100, b2);
+
+        let diff = m1.delta(&m2);
+
+        // Should have one modified order and one new order
+        assert_eq!(diff.modified.get(&100).unwrap(), &vec![o2_modified]);
+        assert_eq!(diff.new.get(&100).unwrap(), &vec![o3_new]);
+        assert!(diff.removed.get(&100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_delta_unchanged_orders() {
+        let m1 = Market::new();
+        let m2 = Market::new();
+
+        let mut b1 = OrderBook::new(100);
+        let o1 = make_order(1, 10.0);
+        b1.orders.insert(o1.id, o1.clone());
+        m1.items.insert(100, b1);
+
+        let mut b2 = OrderBook::new(100);
+        let o1_same = o1.clone(); // exactly the same order
+        b2.orders.insert(o1_same.id, o1_same);
+        m2.items.insert(100, b2);
+
+        let diff = m1.delta(&m2);
+
+        // No changes should be detected
+        assert!(diff.new.get(&100).is_none());
+        assert!(diff.modified.get(&100).unwrap().is_empty());
+        assert!(diff.removed.get(&100).unwrap().is_empty());
     }
 }

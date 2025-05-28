@@ -83,12 +83,13 @@ impl TryFrom<u32> for RegionID {
 }
 
 /// This struct represents a region in the EvE universe.
-#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug, Hash)]
 pub struct Region {
     #[serde(rename = "region_id")]
     pub id: RegionID,
     pub name: String,
 }
+impl Eq for Region {}
 
 type RegionResult = Result<Region, Box<dyn Error>>;
 
@@ -108,6 +109,7 @@ impl Regions {
 
     /// Fetches all regions in the universe and returns a Regions object with all regions
     pub async fn get_all(client: Arc<ESIClient>) -> Result<Self, Box<dyn std::error::Error>> {
+        println!("Regions: Fetching All");
         let regions = Regions::new(client);
 
         let ids: Vec<RegionID> = regions
@@ -139,6 +141,7 @@ impl Regions {
 
         let regions = Arc::try_unwrap(regions).expect("Arc still has multiple strong counts");
 
+        println!("Regions: Finished fetching all");
         Ok(regions)
     }
 
