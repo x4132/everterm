@@ -95,14 +95,14 @@ type RegionResult = Result<Region, Box<dyn Error>>;
 
 #[derive(Clone, Debug)]
 pub struct Regions {
-    pub map: Arc<DashMap<RegionID, Region>>,
+    pub region_map: Arc<DashMap<RegionID, Region>>,
     client: Arc<ESIClient>,
 }
 
 impl Regions {
     pub fn new(client: Arc<ESIClient>) -> Self {
         Regions {
-            map: Arc::new(DashMap::new()),
+            region_map: Arc::new(DashMap::new()),
             client,
         }
     }
@@ -148,7 +148,7 @@ impl Regions {
     /// retrieves a region from an ID.
     pub async fn get_region(&self, id: RegionID) -> RegionResult {
         {
-            if let Some(data) = self.map.get(&id) {
+            if let Some(data) = self.region_map.get(&id) {
                 return Ok(data.clone());
             }
         }
@@ -163,7 +163,7 @@ impl Regions {
             // locking the map at ID BECAUSE WHY
             // this feels wrong
             // TODO: research better ways to deal with this mess
-            self.map.get(&id);
+            self.region_map.get(&id);
             region = self
                 .client
                 .esi_get(&format!("/universe/regions/{}/", id.get()))
@@ -172,14 +172,14 @@ impl Regions {
                 .await?;
         }
 
-        self.map.insert(id, region.clone());
+        self.region_map.insert(id, region.clone());
 
         Ok(region)
     }
 
     pub fn from_map(map: DashMap<RegionID, Region>, client: Arc<ESIClient>) -> Self {
         Regions {
-            map: Arc::new(map),
+            region_map: Arc::new(map),
             client,
         }
     }
@@ -212,6 +212,13 @@ impl<'de> Deserialize<'de> for SystemID {
         let value = u32::deserialize(deserializer)?;
         SystemID::try_from(value).map_err(serde::de::Error::custom)
     }
+}
+impl Serialize for SystemID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+            u32::serialize(&self.value, serializer)
+        }
 }
 
 impl TryFrom<u32> for SystemID {
@@ -387,6 +394,15 @@ impl<'de> Deserialize<'de> for StationID {
     {
         let value = u64::deserialize(deserializer)?;
         StationID::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for StationID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u64(self.value)
     }
 }
 

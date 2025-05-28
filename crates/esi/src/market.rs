@@ -2,7 +2,7 @@ use chrono::{DateTime, ParseError, Utc};
 use dashmap::DashMap;
 use reqwest::header::{EXPIRES, HeaderValue, LAST_MODIFIED};
 use serde::{
-    Deserialize,
+    Deserialize, Serialize,
     de::{self, Visitor},
 };
 use std::{
@@ -14,10 +14,11 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    universe::{InvalidIDError, Region, StationID, SystemID}, ESIClient
+    ESIClient,
+    universe::{InvalidIDError, Region, StationID, SystemID},
 };
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize)]
 pub enum MarketOrderRange {
     System(u32),
     Station,
@@ -94,7 +95,7 @@ struct MarketAPIResponseOrder {
     volume_total: u32,
 }
 
-#[derive(Clone, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Debug, PartialEq, Serialize)]
 pub struct Order {
     pub id: u64,
     pub is_buy_order: bool,
@@ -157,7 +158,7 @@ impl TryFrom<MarketAPIResponseOrder> for Order {
 }
 
 /// Carries the current orders at a single snapshot.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OrderBook {
     pub item: u32,
     pub orders: HashMap<u64, Order>,
@@ -184,7 +185,7 @@ impl OrderBook {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Market {
     pub items: DashMap<u32, OrderBook>,
     pub last_modified: DateTime<Utc>,
@@ -380,7 +381,10 @@ impl Market {
                             }
                             None => {
                                 // The order was cancelled/filled/removed in some way
-                                diff.removed.get_mut(old_item.key()).unwrap().push(old_order.1.id);
+                                diff.removed
+                                    .get_mut(old_item.key())
+                                    .unwrap()
+                                    .push(old_order.1.id);
                             }
                         }
                     }

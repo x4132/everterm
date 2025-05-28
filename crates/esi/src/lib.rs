@@ -1,4 +1,6 @@
-use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
+use http_cache_reqwest::{
+    CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
+};
 use macros::ESI_URL;
 use reqwest::{Response, header::USER_AGENT};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, Error as MiddlewareError};
@@ -35,7 +37,18 @@ impl ESIClient {
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,
                 manager: CACacheManager::default(),
-                options: HttpCacheOptions::default(),
+                options: HttpCacheOptions {
+                    cache_key: None,
+                    cache_mode_fn: None,
+                    cache_options: Some(CacheOptions {
+                        shared: true,
+                        cache_heuristic: 0.01,
+                        ignore_cargo_cult: false,
+                        immutable_min_time_to_live: Duration::from_secs(24 * 3600)
+                    }),
+                    cache_bust: None,
+                    cache_status_headers: true,
+                },
             }))
             .build(), // cursed
             component_name: String::from(component_name),

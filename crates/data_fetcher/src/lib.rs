@@ -8,14 +8,20 @@ use esi::{
     universe::{Region, RegionID},
 };
 use tokio::{
-    sync::{Mutex, mpsc, broadcast},
+    sync::{
+        Mutex,
+        broadcast::{self, Receiver},
+        mpsc,
+    },
     time,
 };
+
+pub mod server;
 
 /// Message broadcast when a region is refreshed
 #[derive(Debug, Clone)]
 pub struct RegionRefreshEvent {
-    pub region_id: RegionID,
+    pub id: RegionID,
     pub expires: DateTime<Utc>,
 }
 
@@ -36,7 +42,6 @@ pub async fn refresh_region_data(
                 // Extract the expiry time before sending the data
                 let expiry_time = data.expires;
 
-
                 let sleep_dur = (expiry_time - Utc::now() + TimeDelta::new(1, 0).unwrap())
                     .to_std()
                     .unwrap_or(std::time::Duration::from_secs(30));
@@ -55,14 +60,12 @@ pub async fn refresh_region_data(
 
                 // Broadcast the region refresh event
                 let refresh_event = RegionRefreshEvent {
-                    region_id: region.id,
+                    id: region.id,
                     expires: expiry_time,
                 };
 
-                if let Err(_) = broadcast_tx.send(refresh_event) {
-                    // This is not critical - broadcast may not have any receivers
-                    // We don't break here as this is just informational
-                }
+                // failing to send broadcasts just means nobody has subscribed
+                if let Err(_) = broadcast_tx.send(refresh_event) {}
 
                 time::sleep(sleep_dur).await;
             }
@@ -175,5 +178,14 @@ pub async fn update_market_data(
             // Store the new regional market data
             regions.insert(region, new_market);
         });
+    }
+}
+
+pub async fn get_refresh_intervals(
+    intervals_map: Arc<DashMap<u32, Option<DateTime<Utc>>>>,
+    mut broadcast_rx: Receiver<RegionRefreshEvent>,
+) {
+    while let Ok(event) = broadcast_rx.recv().await {
+        intervals_map.insert(event.id.get(), Some(event.expires));
     }
 }

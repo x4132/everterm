@@ -791,11 +791,13 @@ dependencies = [
 name = "data_fetcher"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "dashmap",
  "esi",
  "reqwest",
  "rlimit",
+ "serde_json",
  "tokio",
 ]
 
