@@ -140,7 +140,11 @@ code {
     html,
     body,
     #app {
-        @apply bg-background text-foreground w-full h-full text-lg;
+        @apply bg-background text-foreground w-full h-full text-lg p-0 m-0;
+    }
+
+    #app {
+        @apply flex flex-col;
     }
 }
 

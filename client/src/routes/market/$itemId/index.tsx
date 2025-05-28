@@ -19,7 +19,7 @@ function RouteComponent() {
   const orders = useQuery({
     queryKey: ["orderbook", itemId],
     queryFn: async () => {
-      const response = await fetch(`/api/market/orders/${itemId}`);
+      const response = await fetch(`/api/orders/${itemId}`);
       if (!response.ok) {
         throw new Error(response.statusText);
       }
@@ -28,10 +28,12 @@ function RouteComponent() {
     },
   });
 
+
   return (
     <div>
-      <div>Hello "/market/{itemId}/"!</div>
-      <div>{orders.data}</div>
+      <div>
+
+      </div>
     </div>
   );
 }
