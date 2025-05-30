@@ -1,3 +1,4 @@
+import { item_names } from "@/lib/staticESIQueries";
 import { useQuery } from "@tanstack/react-query";
 import ky from "ky";
 import React from "react";
@@ -14,10 +15,15 @@ export default function Status() {
     queryKey: ["api-ping"],
     queryFn: async () => {
       return await ky.get("/api/ping");
-    }
+    },
   });
 
-  const union_status = [esi_status.status, backend_status.status].reduce((prev, cur) => {
+  const static_status = useQuery({
+    queryKey: ["item_names"],
+    queryFn: item_names,
+  });
+
+  const union_status = [esi_status.status, backend_status.status, static_status.status].reduce((prev, cur) => {
     if (prev === "error" || cur === "error") return "error";
     if (prev === "pending" || cur === "pending") return "pending";
     return "success";
@@ -36,6 +42,9 @@ export default function Status() {
         </div>
         <div className="flex items-center">
           ESI Status: <StatusDot status={esi_status.status} />{" "}
+        </div>
+        <div className="flex items-center">
+          Static Data: <StatusDot status={static_status.status} />{" "}
         </div>
       </div>
     </div>
