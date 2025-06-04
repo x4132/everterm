@@ -9,3 +9,4 @@ tokio.workspace = true
 serde.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
+esi.workspace = true
