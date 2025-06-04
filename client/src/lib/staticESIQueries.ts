@@ -74,17 +74,17 @@ export async function market_group_names(): Promise<MarketGroup[]> {
 /**
  * Returns a map of id->name.
  */
-export async function item_names(): Promise<Map<number, string>> {
+export async function item_names(): Promise<Map<number, [string, string | undefined]>> {
   const market_groups = await market_group_names();
   const allIds = market_groups.map((group) => group.types).flat(1);
 
   // Check cache for existing items
   const cachedItems = await db.itemNames.bulkGet(allIds);
-  const cachedMap = new Map<number, string>();
+  const cachedMap = new Map<number, [string, string | undefined]>();
 
   for (const item of cachedItems) {
     if (item) {
-      cachedMap.set(item.id, item.name);
+      cachedMap.set(item.id, [item.name, item.category]);
     }
   }
 
@@ -109,7 +109,7 @@ export async function item_names(): Promise<Map<number, string>> {
       try {
         const names = z.array(UniverseName).parse(await result.value.json());
         for (const item of names) {
-          cachedMap.set(item.id, item.name);
+          cachedMap.set(item.id, [item.name, item.category]);
           itemsToStore.push({
             id: item.id,
             name: item.name,

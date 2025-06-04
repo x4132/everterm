@@ -1,88 +1,77 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { ChevronRight } from "lucide-react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import useCommandSearch from './useCommandSearch';
+import useCommandSearch, { CommandAction, FunctionObject } from "./commandSearch";
+import fuzzysort from "fuzzysort";
+import { useNavigate } from "@tanstack/react-router";
+import { db } from "@/db";
 
 export default function CommandInput() {
   const [focused, setFocused] = useState(false);
   const [command, setCommand] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(-1); // Tracks selected result index
+  const [selectedIndex, setSelectedIndex] = useState(0); // Tracks selected result index
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   // Reset selection when command changes
   useEffect(() => {
-    setSelectedIndex(-1);
+    setSelectedIndex(0);
   }, [command]);
 
-  const { searchFn } = useCommandSearch();
-  const search_results = searchFn(command) ?? [];
+  const availableFunctions: FunctionObject[] = [
+    { name: fuzzysort.prepare("MDM"), description: "Order Book", type: "function", for: "id" },
+    { name: fuzzysort.prepare("G"), description: "Charts", type: "function", for: "id" },
+  ];
+
+  const { searchFn } = useCommandSearch(availableFunctions, { id: availableFunctions, function: [], none: [] });
+  const search_results = searchFn(command);
 
   // Handle keyboard navigation
-  const handleKeyNavigation = useCallback(
-    (evt: React.KeyboardEvent<HTMLDivElement>) => {
-      switch (evt.code) {
-        case "ArrowDown":
+  const handleKeyNavigation = (evt: React.KeyboardEvent<HTMLDivElement>) => {
+    switch (evt.code) {
+      case "ArrowDown":
+        evt.preventDefault();
+        setSelectedIndex((prev) => (prev < search_results.length - 1 ? prev + 1 : 0));
+        break;
+      case "ArrowUp":
+        evt.preventDefault();
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : search_results.length - 1));
+        break;
+      case "Tab":
+        evt.preventDefault();
+        break;
+      case "Enter":
+        if ((selectedIndex >= 0 && selectedIndex < search_results.length) || search_results.length > 0) {
+          const result = search_results[selectedIndex >= 0 ? selectedIndex : 0].obj;
           evt.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < search_results.length - 1 ? prev + 1 : 0
-          );
-          break;
-        case "ArrowUp":
-          evt.preventDefault();
-          setSelectedIndex((prev) =>
-            prev > 0 ? prev - 1 : search_results.length - 1
-          );
-          break;
-        case "Tab":
-          if (selectedIndex >= 0 && selectedIndex < search_results.length) {
-            evt.preventDefault();
-            setCommand(search_results[selectedIndex].target);
-            setSelectedIndex(-1);
-          }
-          break;
-        case "Enter":
-          if (selectedIndex >= 0 && selectedIndex < search_results.length) {
-            evt.preventDefault();
-            navigate({ to: search_results[selectedIndex].obj.to });
-            setCommand("");
-            blurInput();
-          } else if (search_results.length > 0) {
-            // If no item selected but results exist, navigate to first result
-            evt.preventDefault();
-            navigate({ to: search_results[0].obj.to });
-            setCommand("");
-            blurInput();
-          }
-          break;
-        case "Escape":
-          if (command === "") {
-            blurInput();
-          } else {
-            setCommand("");
-          }
-          break;
-      }
-    },
-    [command, search_results, selectedIndex, navigate]
-  );
+          handleAction(result);
+        }
+        break;
+      case "Escape":
+        if (command === "") {
+          blurInput();
+        } else {
+          setCommand("");
+        }
+        break;
+    }
+  };
 
   // ui garbage
-  const focusInput = useCallback(() => {
+  const focusInput = () => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
-  }, []);
+  };
 
-  const blurInput = useCallback(() => {
+  const blurInput = () => {
     if (inputRef.current) {
       inputRef.current.blur();
     }
-  }, []);
+  };
 
-  const handleFocus = useCallback(() => setFocused(true), []);
-  const handleBlur = useCallback(() => setFocused(false), []);
+  const handleFocus = () => setFocused(true);
+  const handleBlur = () => setFocused(false);
 
   const globalShortcutHandler = useCallback(
     (evt: KeyboardEvent) => {
@@ -107,6 +96,33 @@ export default function CommandInput() {
     };
   }, [globalShortcutHandler]);
 
+  async function handleAction(action: CommandAction) {
+    if (action.type) {
+      switch (action.type) {
+        case "id":
+          setCommand((action.name as Fuzzysort.Prepared).target + " ");
+          setSelectedIndex(0);
+          break;
+        case "function":
+          const itemName = command.substring(0, command.lastIndexOf(" "));
+          const id = await db.itemNames.where("name").equalsIgnoreCase(itemName).first();
+          if (id) {
+            setCommand(itemName + " ");
+            blurInput();
+            switch ((action.name as Fuzzysort.Prepared).target) {
+              case "MDM":
+                navigate({ to: `/market/${id.id}/mdm` });
+                break;
+              case "G":
+                navigate({ to: `/market/${id.id}/g` });
+                break;
+            }
+          }
+          break;
+      }
+    }
+  }
+
   return (
     <div className="flex grow items-center relative">
       <div
@@ -130,15 +146,12 @@ export default function CommandInput() {
       >
         <div>
           {search_results.map((result, index) => (
-            <CommandAction
+            <CommandBox
               name={result.target}
-              to={result.obj.to}
-              key={result.obj.id}
+              action={result.obj}
+              key={("id" in result.obj ? result.obj.id : index) + result.obj.description}
               selected={index === selectedIndex}
-              onNavigate={() => {
-                setCommand("");
-                blurInput();
-              }}
+              onClick={(action: CommandAction) => handleAction(action)}
             />
           ))}
         </div>
@@ -147,19 +160,21 @@ export default function CommandInput() {
   );
 }
 
-function CommandAction({ name, to, onNavigate, selected }: {
+function CommandBox({
+  name,
+  action,
+  onClick,
+  selected,
+}: {
   name: string;
-  to?: string;
-  onNavigate?: () => void;
+  action: CommandAction;
+  onClick: (action: CommandAction) => void;
   selected?: boolean;
 }) {
   return (
-    <Link
-      to={to}
-      className={`block hover:bg-white/10 ${selected ? "bg-white/20" : ""}`}
-      onClick={onNavigate}
-    >
-      {name}
-    </Link>
+    <div className={`flex hover:bg-white/10 px-1 ${selected ? "bg-white/20" : ""}`} onClick={() => onClick(action)}>
+      <p className="text-orange-500">{name}</p>
+      <p className="ml-4 mr-2 font-main">{action.description}</p>
+    </div>
   );
 }
