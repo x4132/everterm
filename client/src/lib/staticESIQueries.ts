@@ -1,6 +1,6 @@
-import { db, MarketGroup, UniverseName } from "@/db";
+import {db, MarketGroup, UniverseName} from "@/db";
 import esi from "@/lib/esiClient";
-import { z } from "zod/v4-mini"; // TODO: consider whether zod or zod mini is better
+import {z} from "zod/v4-mini"; // TODO: consider whether zod or zod mini is better
 
 const MarketGroupList = z.array(z.number());
 
@@ -36,24 +36,19 @@ export async function market_group_names(): Promise<MarketGroup[]> {
 
     //   }
 
-    return await db.marketGroups.toArray();
+    return db.marketGroups.toArray();
   }
 
   const group_promises = market_groups.map((group) => esi.get(`markets/groups/${group}/`));
 
-  const group_results = await Promise.allSettled(group_promises);
   const groups = [];
-
-  for (const result of group_results) {
-    if (result.status === "fulfilled") {
-      groups.push(result.value);
-    } else {
-      throw new Error(result.reason);
-    }
+  // we batch group requests into groups of 5 instead of all at once (this is 3600+ requests)
+  for (let i = 0; i < group_promises.length; i++) {
+    groups.push(...(await Promise.all(group_promises.slice(i, i + 5)))); // yeah i know this is cursed
   }
 
   const names = await Promise.all(
-    group_results.filter((resp) => resp.status === "fulfilled").map((resp) => resp.value.json()),
+    groups.map((resp) => resp.json()),
   );
 
   await db.marketGroups.bulkAdd(z.array(MarketGroup).parse(names));
