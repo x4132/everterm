@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::consts::OS,
         max_fds,
     ));
-    let regions = Regions::get_all(client.clone()).await.unwrap();
+    let regions = Regions::get_all(client.clone()).await?;
 
     // Set up broadcast channel for region refresh events
     let (region_upd_tx, region_upd_rx) = broadcast::channel(128);
