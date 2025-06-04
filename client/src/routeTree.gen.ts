@@ -14,7 +14,8 @@ import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
 import { Route as MarketIndexImport } from './routes/market/index'
 import { Route as MarketItemIdIndexImport } from './routes/market/$itemId/index'
-import { Route as MarketItemIdGraphImport } from './routes/market/$itemId/graph'
+import { Route as MarketItemIdMdmImport } from './routes/market/$itemId/mdm'
+import { Route as MarketItemIdGImport } from './routes/market/$itemId/g'
 
 // Create/Update Routes
 
@@ -36,9 +37,15 @@ const MarketItemIdIndexRoute = MarketItemIdIndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const MarketItemIdGraphRoute = MarketItemIdGraphImport.update({
-  id: '/market/$itemId/graph',
-  path: '/market/$itemId/graph',
+const MarketItemIdMdmRoute = MarketItemIdMdmImport.update({
+  id: '/market/$itemId/mdm',
+  path: '/market/$itemId/mdm',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const MarketItemIdGRoute = MarketItemIdGImport.update({
+  id: '/market/$itemId/g',
+  path: '/market/$itemId/g',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -60,11 +67,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketIndexImport
       parentRoute: typeof rootRoute
     }
-    '/market/$itemId/graph': {
-      id: '/market/$itemId/graph'
-      path: '/market/$itemId/graph'
-      fullPath: '/market/$itemId/graph'
-      preLoaderRoute: typeof MarketItemIdGraphImport
+    '/market/$itemId/g': {
+      id: '/market/$itemId/g'
+      path: '/market/$itemId/g'
+      fullPath: '/market/$itemId/g'
+      preLoaderRoute: typeof MarketItemIdGImport
+      parentRoute: typeof rootRoute
+    }
+    '/market/$itemId/mdm': {
+      id: '/market/$itemId/mdm'
+      path: '/market/$itemId/mdm'
+      fullPath: '/market/$itemId/mdm'
+      preLoaderRoute: typeof MarketItemIdMdmImport
       parentRoute: typeof rootRoute
     }
     '/market/$itemId/': {
@@ -82,14 +96,16 @@ declare module '@tanstack/react-router' {
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/market': typeof MarketIndexRoute
-  '/market/$itemId/graph': typeof MarketItemIdGraphRoute
+  '/market/$itemId/g': typeof MarketItemIdGRoute
+  '/market/$itemId/mdm': typeof MarketItemIdMdmRoute
   '/market/$itemId': typeof MarketItemIdIndexRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/market': typeof MarketIndexRoute
-  '/market/$itemId/graph': typeof MarketItemIdGraphRoute
+  '/market/$itemId/g': typeof MarketItemIdGRoute
+  '/market/$itemId/mdm': typeof MarketItemIdMdmRoute
   '/market/$itemId': typeof MarketItemIdIndexRoute
 }
 
@@ -97,20 +113,32 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/market/': typeof MarketIndexRoute
-  '/market/$itemId/graph': typeof MarketItemIdGraphRoute
+  '/market/$itemId/g': typeof MarketItemIdGRoute
+  '/market/$itemId/mdm': typeof MarketItemIdMdmRoute
   '/market/$itemId/': typeof MarketItemIdIndexRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/market' | '/market/$itemId/graph' | '/market/$itemId'
+  fullPaths:
+    | '/'
+    | '/market'
+    | '/market/$itemId/g'
+    | '/market/$itemId/mdm'
+    | '/market/$itemId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/market' | '/market/$itemId/graph' | '/market/$itemId'
+  to:
+    | '/'
+    | '/market'
+    | '/market/$itemId/g'
+    | '/market/$itemId/mdm'
+    | '/market/$itemId'
   id:
     | '__root__'
     | '/'
     | '/market/'
-    | '/market/$itemId/graph'
+    | '/market/$itemId/g'
+    | '/market/$itemId/mdm'
     | '/market/$itemId/'
   fileRoutesById: FileRoutesById
 }
@@ -118,14 +146,16 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MarketIndexRoute: typeof MarketIndexRoute
-  MarketItemIdGraphRoute: typeof MarketItemIdGraphRoute
+  MarketItemIdGRoute: typeof MarketItemIdGRoute
+  MarketItemIdMdmRoute: typeof MarketItemIdMdmRoute
   MarketItemIdIndexRoute: typeof MarketItemIdIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MarketIndexRoute: MarketIndexRoute,
-  MarketItemIdGraphRoute: MarketItemIdGraphRoute,
+  MarketItemIdGRoute: MarketItemIdGRoute,
+  MarketItemIdMdmRoute: MarketItemIdMdmRoute,
   MarketItemIdIndexRoute: MarketItemIdIndexRoute,
 }
 
@@ -141,7 +171,8 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/market/",
-        "/market/$itemId/graph",
+        "/market/$itemId/g",
+        "/market/$itemId/mdm",
         "/market/$itemId/"
       ]
     },
@@ -151,8 +182,11 @@ export const routeTree = rootRoute
     "/market/": {
       "filePath": "market/index.tsx"
     },
-    "/market/$itemId/graph": {
-      "filePath": "market/$itemId/graph.tsx"
+    "/market/$itemId/g": {
+      "filePath": "market/$itemId/g.tsx"
+    },
+    "/market/$itemId/mdm": {
+      "filePath": "market/$itemId/mdm.tsx"
     },
     "/market/$itemId/": {
       "filePath": "market/$itemId/index.tsx"

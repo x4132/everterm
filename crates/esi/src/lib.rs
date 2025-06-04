@@ -2,11 +2,14 @@ use http_cache_reqwest::{
     CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
 };
 use macros::ESI_URL;
+use reqwest::header::CONTENT_TYPE;
 use reqwest::{Response, header::USER_AGENT};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, Error as MiddlewareError};
+use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::sleep;
+use base64::prelude::*;
 
 mod macros;
 pub mod market;
@@ -20,6 +23,7 @@ pub struct ESIClient {
     component_name: String,
     platform_name: String,
     connect_pool: Arc<Semaphore>, // we need this to not run out of open fd's
+    auth_tok: Option<String>,
 }
 
 impl ESIClient {
@@ -54,6 +58,7 @@ impl ESIClient {
             component_name: String::from(component_name),
             platform_name: String::from(platform_name),
             connect_pool: Arc::new(Semaphore::new(max_sem)),
+            auth_tok: None
         }
     }
 
@@ -142,6 +147,30 @@ impl ESIClient {
                 Err(err.into())
             }
         }
+    }
+
+    async fn load_auth_tok(&mut self, refresh_tok: &str, client_id: &str, client_secret: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let auth_str = BASE64_STANDARD.encode(format!("{}:{}", client_id, client_secret).as_bytes());
+
+        let response = self.client
+            .post("https://login.eveonline.com/v2/oauth/token")
+            .header("Authorization", format!("Basic {}", auth_str))
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .form(&[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_tok),
+            ])
+            .send()
+            .await?;
+
+        let token_response: serde_json::Value = response.json().await?;
+        let access_token = token_response["access_token"]
+            .as_str()
+            .ok_or("Missing access_token in response")?
+            .to_string();
+
+        self.auth_tok = Some(access_token);
+        Ok(())
     }
 
     async fn await_esi_timeout(&self) {

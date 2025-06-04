@@ -1,7 +1,7 @@
 import InvalidID from '@/components/InvalidID';
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/market/$itemId/graph')({
+export const Route = createFileRoute('/market/$itemId/g')({
   loader: async ({ params }) => {
     return parseInt(params.itemId);
   },

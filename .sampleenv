@@ -1,0 +1,3 @@
+PUB_STRUCT_ESI_REFRESH = "" # this should be a fresh character/unprivileged
+CLIENT_ID = "" # esi client id
+CLIENT_SECRET = "" # esi client secret
