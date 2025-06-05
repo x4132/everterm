@@ -1,15 +1,18 @@
+use base64::prelude::*;
 use http_cache_reqwest::{
     CACacheManager, Cache, CacheMode, CacheOptions, HttpCache, HttpCacheOptions,
 };
 use macros::ESI_URL;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{Response, header::USER_AGENT};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, Error as MiddlewareError};
-use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::clone;
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::sleep;
-use base64::prelude::*;
 
 mod macros;
 pub mod market;
@@ -48,7 +51,7 @@ impl ESIClient {
                         shared: true,
                         cache_heuristic: 0.01,
                         ignore_cargo_cult: false,
-                        immutable_min_time_to_live: Duration::from_secs(24 * 3600)
+                        immutable_min_time_to_live: Duration::from_secs(24 * 3600),
                     }),
                     cache_bust: None,
                     cache_status_headers: true,
@@ -58,7 +61,7 @@ impl ESIClient {
             component_name: String::from(component_name),
             platform_name: String::from(platform_name),
             connect_pool: Arc::new(Semaphore::new(max_sem)),
-            auth_tok: None
+            auth_tok: None,
         }
     }
 
@@ -73,8 +76,12 @@ impl ESIClient {
             }
         }
 
-        let req = self.client.get([ESI_URL, url].join(""))
+        let mut req = self.client.get([ESI_URL, url].join(""))
             .header(USER_AGENT, format!("{}; component of EvERTerm/0.0.1 (0@x4132.dev; +https://github.com/x4132/everterm; discord:msvcredist2022; eve:Charles Helugo) on {}", self.component_name, self.platform_name));
+
+        if self.auth_tok_valid().await {
+            req = req.header(AUTHORIZATION, format!("Bearer {}", self.auth_tok.clone().unwrap_or(String::from("NOACL"))));
+        }
 
         // send first request via middleware and map all errors into MiddlewareError
         let mut result: Result<Response, MiddlewareError> = {
@@ -149,16 +156,67 @@ impl ESIClient {
         }
     }
 
-    async fn load_auth_tok(&mut self, refresh_tok: &str, client_id: &str, client_secret: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let auth_str = BASE64_STANDARD.encode(format!("{}:{}", client_id, client_secret).as_bytes());
+    /// check if auth token is valid
+    pub async fn auth_tok_valid(&self) -> bool {
+        match self.auth_tok.clone() {
+            Some(tok) => {
+                // Parse JWT token to check expiry
+                let parts: Vec<&str> = tok.split('.').collect();
+                if parts.len() != 3 {
+                    return false;
+                }
 
-        let response = self.client
+                // Decode the payload (second part of JWT)
+                let payload_b64 = parts[1];
+                // Add padding if needed for base64 decoding
+                let padded_payload = match payload_b64.len() % 4 {
+                    0 => payload_b64.to_string(),
+                    n => format!("{}{}", payload_b64, "=".repeat(4 - n)),
+                };
+
+                match BASE64_STANDARD.decode(padded_payload.as_bytes()) {
+                    Ok(decoded) => {
+                        match serde_json::from_slice::<serde_json::Value>(&decoded) {
+                            Ok(payload) => {
+                                if let Some(exp) = payload.get("exp").and_then(|v| v.as_u64()) {
+                                    let current_time = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs();
+
+                                    // Token is valid if current time is less than expiry time
+                                    current_time < exp
+                                } else {
+                                    false // No expiry claim found
+                                }
+                            }
+                            Err(_) => false, // Failed to parse JSON
+                        }
+                    }
+                    Err(_) => false, // Failed to decode base64
+                }
+            }
+            None => false,
+        }
+    }
+
+    pub async fn load_auth_tok(
+        &mut self,
+        refresh_tok: String,
+        client_id: String,
+        client_secret: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let auth_str =
+            BASE64_STANDARD.encode(format!("{}:{}", client_id, client_secret).as_bytes());
+
+        let response = self
+            .client
             .post("https://login.eveonline.com/v2/oauth/token")
             .header("Authorization", format!("Basic {}", auth_str))
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .form(&[
                 ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_tok),
+                ("refresh_token", &refresh_tok),
             ])
             .send()
             .await?;
@@ -170,6 +228,7 @@ impl ESIClient {
             .to_string();
 
         self.auth_tok = Some(access_token);
+
         Ok(())
     }
 

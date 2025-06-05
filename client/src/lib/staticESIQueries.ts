@@ -39,8 +39,7 @@ export async function market_group_names(): Promise<MarketGroup[]> {
         return db.marketGroups.toArray();
     }
 
-    const group_promises = market_groups.map((group) => esi.get(`markets/groups/${group}/`));
-    const groups = await all_batch(group_promises);
+    const groups = await all_batch((group) => esi.get(`markets/groups/${group}/`), market_groups, 10);
 
     const names = await Promise.all(
         groups.map((resp) => resp.json()),
@@ -87,8 +86,7 @@ export async function item_names(): Promise<Map<number, [string, string | undefi
         ids.push(missingIds.slice(i, i + 1000));
     }
 
-    const name_promises = ids.map((idBatch) => esi.post("universe/names", {json: idBatch}));
-    const name_results = await all_batch(name_promises);
+    const name_results = await all_batch((idBatch) => esi.post("universe/names", {json: idBatch}), ids, 10);
 
     const itemsToStore: UniverseName[] = [];
 

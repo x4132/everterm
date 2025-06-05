@@ -10,3 +10,4 @@ serde.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
 esi.workspace = true
+dotenvy.workspace = true

@@ -1,6 +1,6 @@
 use std::{env, sync::Arc};
 
-use axum::{Router, extract::Path, response::IntoResponse, routing::get};
+use axum::{Json, Router, extract::Path, response::IntoResponse, routing::get};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use esi::market::{Market, Order};
@@ -29,11 +29,11 @@ pub async fn data_server(
                 }
                 let id = id.unwrap();
 
-                // serde_json::to_string().unwrap()
                 match market.lock().await.items.get(&id) {
-                    Some(orderbook) => serde_json::to_string(&orderbook.value().orders.clone().into_values().collect::<Vec<Order>>())
-                        .unwrap()
-                        .into_response(),
+                    Some(orderbook) => {
+                        let orders: Vec<Order> = orderbook.value().orders.clone().into_values().collect();
+                        Json(orders).into_response()
+                    },
                     None => (axum::http::StatusCode::NOT_FOUND, "Item Type Not Found").into_response()
                 }
             })

@@ -109,11 +109,21 @@ function RouteComponent() {
 }
 
 function OrderRow({ order }: { order: MarketOrder }) {
+  const name = useQuery({
+    queryKey: ["structureName", order.location_id],
+    queryFn: async () => {
+      let url = new URL("/api/universe/struct_names/", location.origin);
+      url.searchParams.append("id", order.location_id + "");
+
+      return await ky.get(url).text();
+    }
+  })
+
   return (
     <tr key={order.id}>
       <td className="px-2 border border-gray-300">{order.volume_remain}</td>
       <td className="px-2 border border-gray-300">{order.price.toLocaleString("en-US")}</td>
-      <td className="px-2 border border-gray-300">{order.location_id}</td>
+      <td className="px-2 border border-gray-300">{order.location_id} {name.status === "success" ? name.data : name.status}</td>
       <td className="px-2 border border-gray-300">
         {(() => {
           const diffMs = new Date(order.expiry).getTime() - Date.now();
