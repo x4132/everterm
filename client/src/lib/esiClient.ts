@@ -42,7 +42,7 @@ export default esi;
 
 export async function all_batch<T>(promises: Promise<T>[]) {
     let results = [];
-    for (let i = 0; i < promises.length; i++) {
+    for (let i = 0; i < promises.length; i += 5) {
         results.push(...(await Promise.all(promises.slice(i, i + 5))));
     }
 
