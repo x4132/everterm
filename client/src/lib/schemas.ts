@@ -17,3 +17,10 @@ export type MarketOrder = z.infer<typeof MarketOrder>;
 
 export const MarketOrderBook = z.array(MarketOrder);
 export type MarketOrderBook = z.infer<typeof MarketOrderBook>;
+
+export const Station = z.object({
+  id: z.number(),
+  system_id: z.number(),
+  name: z.string(),
+});
+export type Station = z.infer<typeof Station>;

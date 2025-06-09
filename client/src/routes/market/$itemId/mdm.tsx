@@ -1,7 +1,7 @@
 import InvalidID from "@/components/InvalidID";
 import { UniverseType } from "@/db";
 import esi from "@/lib/esiClient";
-import { MarketOrder, MarketOrderBook } from "@/lib/schemas";
+import { MarketOrder, MarketOrderBook, Station } from "@/lib/schemas";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import ky from "ky";
@@ -115,7 +115,7 @@ function OrderRow({ order }: { order: MarketOrder }) {
       let url = new URL("/api/universe/struct_names/", location.origin);
       url.searchParams.append("id", order.location_id + "");
 
-      return await ky.get(url).text();
+      return Station.parse((await ky.get(url).json())).name;
     }
   })
 

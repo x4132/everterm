@@ -423,8 +423,9 @@ impl TryFrom<u64> for StationID {
 
 type StationResult = Result<Station, Box<dyn Error>>;
 
-#[derive(Clone, Deserialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 pub struct Station {
+    #[serde(alias = "station_id")]
     pub id: StationID,
     pub system_id: SystemID,
     pub name: String,
