@@ -1,8 +1,10 @@
 const crypto = require('crypto');
 const querystring = require('querystring');
 
-const CLIENT_ID = process.env.CLIENT_ID;
-const CLIENT_SECRET = process.env.CLIENT_SECRET;
+let CLIENT_ID = process.env.CLIENT_ID;
+let CLIENT_SECRET = process.env.CLIENT_SECRET;
+
+console.log(CLIENT_ID, CLIENT_SECRET);
 
 /**
  * Takes an authorization code and exchanges it for an access token and refresh token.

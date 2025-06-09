@@ -141,7 +141,7 @@ export default function CommandInput() {
       </div>
 
       <div
-        className={`absolute top-full border w-[640px] flex flex-col z-10 bg-background font-mono p-2 ${focused ? "block" : "hidden"}`}
+        className={`absolute top-full min-w-96 border flex flex-wrap flex-col z-10 bg-background font-mono p-2 ${focused ? "block" : "hidden"}`}
         onMouseDown={(e) => e.preventDefault()}
       >
         <div>

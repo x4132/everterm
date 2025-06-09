@@ -5,7 +5,7 @@ use backend::market_data;
 #[tokio::main]
 async fn main() {
     let api_routes = Router::new()
-        .merge(market_data());
+        .merge(market_data().await);
 
     let app = Router::new()
         .nest("/api", api_routes);

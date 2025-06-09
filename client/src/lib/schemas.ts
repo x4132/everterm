@@ -22,5 +22,17 @@ export const Station = z.object({
   id: z.number(),
   system_id: z.number(),
   name: z.string(),
+  type_id: z.optional(z.number()),
 });
 export type Station = z.infer<typeof Station>;
+
+export const RefreshIntervals = z.record(z.string(), z.coerce.date());
+export type RefreshIntervals = z.infer<typeof RefreshIntervals>;
+
+export const Region = z.object({
+  constellations: z.array(z.number()),
+  description: z.string(),
+  name: z.string(),
+  region_id: z.number(),
+});
+export type Region = z.infer<typeof Region>;

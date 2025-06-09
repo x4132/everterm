@@ -431,6 +431,22 @@ pub struct Station {
     pub name: String,
 }
 
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct StructureAPIResponse {
+    #[serde(alias = "solar_system_id")]
+    pub system_id: SystemID,
+    pub type_id: u32,
+    pub name: String
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+pub struct Structure {
+    pub id: StationID,
+    pub system_id: SystemID,
+    pub name: String,
+    pub type_id: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Stations {
     pub map: DashMap<StationID, Station>,

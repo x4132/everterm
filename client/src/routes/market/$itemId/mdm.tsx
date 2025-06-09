@@ -1,10 +1,11 @@
 import InvalidID from "@/components/InvalidID";
-import { UniverseType } from "@/db";
+import { db, UniverseType } from "@/db";
 import esi from "@/lib/esiClient";
-import { MarketOrder, MarketOrderBook, Station } from "@/lib/schemas";
-import { useQuery } from "@tanstack/react-query";
+import { MarketOrder, MarketOrderBook, RefreshIntervals, Region, Station } from "@/lib/schemas";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import ky from "ky";
+import React, { useState } from "react";
 
 export const Route = createFileRoute("/market/$itemId/mdm")({
   loader: async ({ params }) => {
@@ -13,8 +14,11 @@ export const Route = createFileRoute("/market/$itemId/mdm")({
   component: RouteComponent,
 });
 
+let updateTimeout: number | null = null;
+
 function RouteComponent() {
   const itemId = Route.useLoaderData();
+  const queryClient = useQueryClient();
 
   if (isNaN(itemId)) {
     return <InvalidID />;
@@ -34,6 +38,25 @@ function RouteComponent() {
     },
   });
 
+  const refreshTime = useQuery({
+    queryKey: ["refreshTime"],
+    queryFn: async () => {
+      return RefreshIntervals.parse(await ky.get("/api/orders/updateTime").json());
+    },
+  });
+
+  const nextRefresh = refreshTime.data
+    ? Object.entries(refreshTime.data).sort((a, b) => a[1].getTime() - b[1].getTime())
+    : [];
+
+  if (!updateTimeout && nextRefresh[0] && nextRefresh[0][1].getTime() < Date.now()) {
+    updateTimeout = setTimeout(() => {
+      updateTimeout = null;
+      queryClient.invalidateQueries({ queryKey: ["orderbook"] });
+      queryClient.invalidateQueries({ queryKey: ["refreshTime"] });
+    }, 10000);
+  }
+
   return (
     <div>
       {item.isPending ? <div>Loading Item Info...</div> : null}
@@ -46,6 +69,8 @@ function RouteComponent() {
             className="border rounded mr-2 h-16 w-16"
           /> */}
           <h1 className="h1">{item.data.name}</h1>
+
+          <CountdownClock updateTime={nextRefresh} />
         </div>
       ) : null}
 
@@ -109,21 +134,25 @@ function RouteComponent() {
 }
 
 function OrderRow({ order }: { order: MarketOrder }) {
-  const name = useQuery({
-    queryKey: ["structureName", order.location_id],
+  const info = useQuery({
+    queryKey: ["structureInfo", order.location_id],
     queryFn: async () => {
       let url = new URL("/api/universe/struct_names/", location.origin);
       url.searchParams.append("id", order.location_id + "");
 
-      return Station.parse((await ky.get(url).json())).name;
-    }
-  })
+      return Station.parse(await ky.get(url).json());
+    },
+  });
 
   return (
     <tr key={order.id}>
       <td className="px-2 border border-gray-300">{order.volume_remain}</td>
       <td className="px-2 border border-gray-300">{order.price.toLocaleString("en-US")}</td>
-      <td className="px-2 border border-gray-300">{order.location_id} {name.status === "success" ? name.data : name.status}</td>
+      <td className="px-2 border border-gray-300">
+        {info.status === "pending" ? "Loading..." : ""}
+        {info.status === "error" ? "Error" : ""}
+        {info.status === "success" ? info.data.name : ""}
+      </td>
       <td className="px-2 border border-gray-300">
         {(() => {
           const diffMs = new Date(order.expiry).getTime() - Date.now();
@@ -145,5 +174,53 @@ function OrderRow({ order }: { order: MarketOrder }) {
         })()}
       </td>
     </tr>
+  );
+}
+
+function CountdownClock({ updateTime }: { updateTime: [string, Date][] }) {
+  const [regionTime, setTime] = useState<[string, number]>(["0", 0]);
+  const time = Math.floor(regionTime[1] / 1000);
+
+  const region = useQuery({
+    queryKey: ["region", regionTime[0]],
+    queryFn: async () => {
+      let cached = await db.regionNames.get(parseInt(regionTime[0]))
+      if (cached) return cached.name;
+
+      let region = Region.parse(await esi.get(`universe/regions/${regionTime[0]}`).json());
+      await db.regionNames.add(region);
+
+      return region.name;
+    },
+  });
+
+  React.useEffect(() => {
+    const now = new Date();
+    const msUntil = 1000 - now.getMilliseconds();
+    let intervalId: number;
+
+    const alignTimeout = setTimeout(() => {
+      let deltas = updateTime.map((cur) => [cur[0], cur[1].getTime() - Date.now()] as [string, number]);
+      setTime(deltas.reduce((prev, cur) => (cur[1] >= 0 && prev[1] < 0 ? cur : prev), ["0", -1]));
+
+      intervalId = setInterval(() => {
+        let deltas = updateTime.map((cur) => [cur[0], cur[1].getTime() - Date.now()] as [string, number]);
+        setTime(deltas.reduce((prev, cur) => (cur[1] >= 0 && prev[1] < 0 ? cur : prev), ["0", -1]));
+      }, 1000);
+    }, msUntil);
+
+    return () => {
+      clearTimeout(alignTimeout);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [updateTime]);
+
+  return (
+    <div className="flex flex-col text-center ml-auto px-2">
+      <span className="text-sm">{region.data ? region.data : region.status} Refreshes In:</span>
+      <span className="h1">
+        {time !== 0 ? `${Math.floor(time / 60)}:${((time % 60) + "").padStart(2, "0")}` : "...."}
+      </span>
+    </div>
   );
 }
